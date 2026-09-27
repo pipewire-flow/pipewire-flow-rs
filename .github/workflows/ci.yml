@@ -205,6 +205,37 @@ jobs:
           RUSTDOCFLAGS: -D warnings
         run: cargo doc --workspace --no-deps
 
+  msrv:
+    name: Build with the minimum supported Rust
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libclang-dev
+
+      - name: Install the toolchain the workspace declares
+        run: |
+          msrv=$(sed -n 's/^rust-version = "\(.*\)"/\1/p' Cargo.toml)
+          rustup toolchain install "$msrv" --profile minimal
+          echo "MSRV=$msrv" >> "$GITHUB_ENV"
+
+      # Cargo.lock is not committed, so a fresh resolve could pick a release
+      # that needs a newer compiler; this prefers ones that still build here.
+      - name: Resolve dependencies the toolchain supports
+        env:
+          CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS: fallback
+        run: cargo generate-lockfile
+
+      - name: Check
+        env:
+          TINYPIPEWIRE_SYS_HEADERS_ONLY: "1"
+        run: cargo +"$MSRV" check --workspace --all-targets
+
   no-libclang:
     name: Build from the committed bindings
     runs-on: ubuntu-latest
