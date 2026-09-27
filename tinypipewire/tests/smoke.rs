@@ -19,7 +19,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use tinypipewire::{
-    AudioConfig, DataType, Error, Filter, PortDirection, Routing, SampleFormat, Stream,
+    AudioConfig, DataType, Error, Event, EventKind, Filter, PortDirection, Routing, SampleFormat,
+    Stream,
 };
 
 /// How long to wait for the graph to start handing out cycles.
@@ -188,6 +189,107 @@ fn a_filter_refuses_a_port_it_did_not_create() {
         Err(Error::InvalidArgument)
     );
     assert_eq!(owner.set_port_hold(port, true), Ok(()));
+}
+
+#[test]
+#[ignore = "needs a running PipeWire daemon with a null sink"]
+fn data_pushed_into_a_filter_reaches_its_callback() {
+    // The size and timestamp of the last input the callback was handed.
+    let seen = Arc::new(Mutex::new(None::<(usize, Option<i64>)>));
+    let last = Arc::clone(&seen);
+    let filter = Filter::new("tpw-smoke-push", move |ports| {
+        for port in ports.iter() {
+            if let Some(data) = port.input().filter(|data| !data.is_empty()) {
+                *last.lock().unwrap() = Some((data.len(), port.pts()));
+            }
+        }
+    })
+    .expect("a filter needs a daemon");
+    let config = AudioConfig::new(48_000, 2).with_format(SampleFormat::F32);
+    let input = filter
+        .add_audio_port(PortDirection::Input, &config)
+        .expect("input port");
+    let output = filter
+        .add_audio_port(PortDirection::Output, &config)
+        .expect("output port");
+
+    assert_eq!(
+        filter.push_port_data(output, &[0; 4], None),
+        Err(Error::InvalidArgument),
+        "only an input port takes pushed data"
+    );
+    filter.start().expect("start");
+
+    // Only the most recent push per port is kept, so the second one is what
+    // the callback ends up seeing.
+    filter
+        .push_port_data(input, &[1; 8], Some(1_000))
+        .expect("first push");
+    filter
+        .push_port_data(input, &[2; 16], Some(2_000))
+        .expect("second push");
+    wait_for(|| *seen.lock().unwrap() == Some((16, Some(2_000))));
+    filter.stop(false).expect("stop");
+
+    assert_eq!(*seen.lock().unwrap(), Some((16, Some(2_000))));
+}
+
+#[test]
+#[ignore = "needs a running PipeWire daemon with a null sink"]
+fn an_event_pushed_into_a_filter_reaches_its_callback() {
+    const NOTE_OFF: [u8; 3] = [0x80, 0x3c, 0x00];
+
+    // The offset, kind and bytes of the last event the callback read.
+    let seen = Arc::new(Mutex::new(None::<(u32, EventKind, [u8; 3])>));
+    // Pushes to the unlinked output port may only be accepted or refused as
+    // having no room; anything else breaks the C library's contract.
+    let unexpected = Arc::new(AtomicUsize::new(0));
+    let (last, odd) = (Arc::clone(&seen), Arc::clone(&unexpected));
+    let filter = Filter::new("tpw-smoke-event", move |ports| {
+        for port in ports.iter_mut() {
+            if let Some(event) = port.events().next() {
+                let mut data = [0; 3];
+                let n = event.data.len().min(data.len());
+                data[..n].copy_from_slice(&event.data[..n]);
+                *last.lock().unwrap() = Some((event.offset, event.kind, data));
+            }
+        }
+        if let Some(out) = ports.get_mut(1) {
+            match out.push_event(&Event::midi(0, &[0x90, 0x3c, 0x64])) {
+                Ok(()) | Err(Error::InvalidArgument) => {}
+                Err(_) => {
+                    odd.fetch_add(1, Ordering::Relaxed);
+                }
+            }
+        }
+    })
+    .expect("a filter needs a daemon");
+    let input = filter
+        .add_event_port(PortDirection::Input)
+        .expect("input event port");
+    let output = filter
+        .add_event_port(PortDirection::Output)
+        .expect("output event port");
+
+    assert_eq!(
+        filter.push_port_event(output, &Event::midi(0, &NOTE_OFF)),
+        Err(Error::InvalidArgument),
+        "an output port takes events only from the processing callback"
+    );
+    filter.start().expect("start");
+
+    filter
+        .push_port_event(input, &Event::midi(5, &NOTE_OFF))
+        .expect("push to the input port");
+    wait_for(|| seen.lock().unwrap().is_some());
+    filter.stop(false).expect("stop");
+
+    assert_eq!(
+        *seen.lock().unwrap(),
+        Some((5, EventKind::Midi, NOTE_OFF)),
+        "the event did not arrive as it was pushed"
+    );
+    assert_eq!(unexpected.load(Ordering::Relaxed), 0);
 }
 
 #[test]
