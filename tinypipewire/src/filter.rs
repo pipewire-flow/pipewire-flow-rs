@@ -1,7 +1,7 @@
 //! Multi-port filters: several inputs and outputs processed together in one
 //! graph cycle.
 
-use std::cell::UnsafeCell;
+use std::cell::{RefCell, UnsafeCell};
 use std::ffi::{c_int, c_void, CStr, CString};
 use std::mem::ManuallyDrop;
 use std::ptr::NonNull;
@@ -54,19 +54,22 @@ impl PortDirection {
 /// registered at construction, so a port a callback needs to recognize has to
 /// reach it through something shared — an `Arc`, a channel, or a `OnceLock`.
 ///
+/// Every call on a port goes through the filter that owns it, which refuses a
+/// [`Port`] it did not create with [`Error::InvalidArgument`].
+///
 /// Dropping the filter stops it and releases every port behind it.
 ///
 /// # Calls from callbacks
 ///
 /// The processing callback runs on PipeWire's real-time data thread, so it
 /// must not block. Pushing data and events and reading DMABUF planes belong
-/// there, but start, stop, [`Port::link`], [`Port::unlink`] and
+/// there, but start, stop, [`Filter::link_port`], [`Filter::unlink_port`] and
 /// [`Filter::target_video_formats`] are refused with [`Error::InCallback`].
 ///
 /// The error callback runs on the filter's loop thread, once per source an
 /// input port loses, and never for the application's own unlink, stop or
-/// drop. A stop without drain and [`Port::unlink`] work there, but a draining
-/// stop, [`Port::link`] and [`Filter::target_video_formats`] are refused with
+/// drop. A stop without drain and [`Filter::unlink_port`] work there, but a
+/// draining stop, [`Filter::link_port`] and [`Filter::target_video_formats`] are refused with
 /// [`Error::InCallback`].
 ///
 /// Dropping the filter from inside either callback cannot tear it down. The C
@@ -84,6 +87,16 @@ pub struct Filter {
     // Boxed so the address handed to C stays put while the Filter moves, and
     // released by hand because a drop inside a callback must leak it.
     state: ManuallyDrop<Box<FilterState>>,
+    // The ports this filter created, checked before any of them reaches C.
+    ports: RefCell<Vec<PortEntry>>,
+}
+
+/// What a filter remembers about one of its ports.
+#[derive(Clone, Copy)]
+struct PortEntry {
+    port: Port,
+    direction: PortDirection,
+    data_type: Option<DataType>,
 }
 
 // As for Stream: the C library locks PipeWire's thread loop internally, so a
@@ -92,7 +105,7 @@ unsafe impl Send for Filter {}
 
 impl Filter {
     /// Creates a filter whose node is named `name`, which is how other
-    /// applications and [`Port::link`] find it. An empty name leaves
+    /// applications and [`Filter::link_port`] find it. An empty name leaves
     /// PipeWire's default, the process name.
     ///
     /// `callback` runs once per graph cycle on PipeWire's real-time data
@@ -115,6 +128,7 @@ impl Filter {
         Ok(Filter {
             handle,
             state: ManuallyDrop::new(state),
+            ports: RefCell::new(Vec::new()),
         })
     }
 
@@ -140,13 +154,17 @@ impl Filter {
     /// Adds one audio port. Must be called before [`Filter::start`].
     pub fn add_audio_port(&self, direction: PortDirection, config: &AudioConfig) -> Result<Port> {
         let raw = config.to_raw();
-        Port::new(unsafe { sys::tpw_filter_add_audio_port(self.handle, direction.to_raw(), &raw) })
+        self.register(direction, unsafe {
+            sys::tpw_filter_add_audio_port(self.handle, direction.to_raw(), &raw)
+        })
     }
 
     /// Adds one video port. Must be called before [`Filter::start`].
     pub fn add_video_port(&self, direction: PortDirection, config: &VideoConfig) -> Result<Port> {
         let raw = config.to_raw();
-        Port::new(unsafe { sys::tpw_filter_add_video_port(self.handle, direction.to_raw(), &raw) })
+        self.register(direction, unsafe {
+            sys::tpw_filter_add_video_port(self.handle, direction.to_raw(), &raw)
+        })
     }
 
     /// Adds one video port that negotiates a particular buffer memory type.
@@ -164,7 +182,7 @@ impl Filter {
             memory: memory.to_raw(),
             reserved: [0; 2],
         };
-        Port::new(unsafe {
+        self.register(direction, unsafe {
             sys::tpw_filter_add_video_port_ex(self.handle, direction.to_raw(), &raw, &opts)
         })
     }
@@ -172,13 +190,95 @@ impl Filter {
     /// Adds one signal port, which carries application-defined samples with
     /// no format negotiation.
     pub fn add_signal_port(&self, direction: PortDirection) -> Result<Port> {
-        Port::new(unsafe { sys::tpw_filter_add_signal_port(self.handle, direction.to_raw()) })
+        self.register(direction, unsafe {
+            sys::tpw_filter_add_signal_port(self.handle, direction.to_raw())
+        })
     }
 
     /// Adds one event port, which carries timed events rather than a
     /// continuous stream.
     pub fn add_event_port(&self, direction: PortDirection) -> Result<Port> {
-        Port::new(unsafe { sys::tpw_filter_add_event_port(self.handle, direction.to_raw()) })
+        self.register(direction, unsafe {
+            sys::tpw_filter_add_event_port(self.handle, direction.to_raw())
+        })
+    }
+
+    /// Records a port the C library just created, so later calls can check it.
+    fn register(&self, direction: PortDirection, raw: sys::tpw_filter_port_h) -> Result<Port> {
+        let port = NonNull::new(raw).map(Port).ok_or(Error::CreateFailed)?;
+        let data_type = DataType::from_raw(unsafe { sys::tpw_filter_port_get_type(raw) });
+        self.ports.borrow_mut().push(PortEntry {
+            port,
+            direction,
+            data_type,
+        });
+        Ok(port)
+    }
+
+    /// Looks `port` up among this filter's own, so a port from another filter
+    /// — possibly one already destroyed — never reaches the C library.
+    fn entry(&self, port: Port) -> Result<PortEntry> {
+        self.ports
+            .borrow()
+            .iter()
+            .find(|entry| entry.port == port)
+            .copied()
+            .ok_or(Error::InvalidArgument)
+    }
+
+    /// What kind of data `port` carries, or `None` if it is not this filter's.
+    pub fn port_data_type(&self, port: Port) -> Option<DataType> {
+        self.entry(port).ok().and_then(|entry| entry.data_type)
+    }
+
+    /// Which way data flows through `port`, or `None` if it is not this
+    /// filter's.
+    pub fn port_direction(&self, port: Port) -> Option<PortDirection> {
+        self.entry(port).ok().map(|entry| entry.direction)
+    }
+
+    /// Keeps re-presenting `port`'s last buffer on cycles where no new one
+    /// arrived, so a slow input does not read as empty next to a fast one.
+    ///
+    /// [`PortBuffer::is_fresh`] tells the two cases apart.
+    pub fn set_port_hold(&self, port: Port, enable: bool) -> Result<()> {
+        let port = self.entry(port)?.port;
+        check(unsafe { sys::tpw_filter_port_set_hold(port.as_raw(), enable) })
+    }
+
+    /// Links `port` to a node, by name or `object.serial`, with no session
+    /// manager involved.
+    ///
+    /// Only an input port on a started filter can link; before the start it is
+    /// [`Error::NotConfigured`]. A target naming no node or port is
+    /// [`Error::NotFound`], a link that fails to negotiate is
+    /// [`Error::InvalidFormat`], and one that does not negotiate in time is
+    /// [`Error::Timeout`].
+    pub fn link_port(&self, port: Port, target: &str) -> Result<()> {
+        let port = self.entry(port)?.port;
+        with_cstr(target, |target| unsafe {
+            sys::tpw_filter_port_link(port.as_raw(), target.as_ptr())
+        })
+        .and_then(check)
+    }
+
+    /// Drops the links [`Filter::link_port`] made on `port`.
+    pub fn unlink_port(&self, port: Port) -> Result<()> {
+        let port = self.entry(port)?.port;
+        check(unsafe { sys::tpw_filter_port_unlink(port.as_raw()) })
+    }
+
+    /// Stages `event` for input event `port` to receive on the next cycle,
+    /// copying its data.
+    ///
+    /// An output port only takes events from within the processing callback,
+    /// through [`PortBuffer::push_event`], so it is refused here.
+    pub fn push_port_event(&self, port: Port, event: &Event<'_>) -> Result<()> {
+        let entry = self.entry(port)?;
+        if entry.direction != PortDirection::Input {
+            return Err(Error::InvalidArgument);
+        }
+        unsafe { push_event(entry.port.as_raw(), event) }
     }
 
     /// Lists the video formats `target` can deliver to a video port of this
@@ -216,8 +316,9 @@ impl Filter {
     ///
     /// Only the most recently pushed buffer per port is kept. `pts` is carried
     /// through to that cycle's [`PortBuffer::pts`]. Event ports take
-    /// [`Port::push_event`] instead.
+    /// [`Filter::push_port_event`] instead.
     pub fn push_port_data(&self, port: Port, data: &[u8], pts: Option<i64>) -> Result<()> {
+        let port = self.entry(port)?.port;
         check(unsafe {
             sys::tpw_filter_push_port_data(
                 self.handle,
@@ -274,80 +375,46 @@ impl std::fmt::Debug for Filter {
 
 /// One port of a filter.
 ///
-/// A port is an identifier, not an owner: it stays valid as long as the
-/// [`Filter`] that produced it, and is released with that filter. Because it
-/// is `Copy` and `Send` it can be shared into the processing callback, which
-/// is registered before any port exists.
+/// A port is an identifier, not a handle: every call that acts on it goes
+/// through the [`Filter`] that created it, which checks it first. That keeps a
+/// port outliving its filter harmless. Because it is `Copy` and `Send` it can
+/// be shared into the processing callback, which is registered before any port
+/// exists.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Port(NonNull<sys::tpw_filter_port>);
 
-// A Port is a bare identifier; every call it forwards to takes PipeWire's
-// thread-loop lock inside the C library.
+// A Port is never dereferenced on its own: the filter that owns it checks it
+// before passing it to C, and a processing cycle hands out only live ones.
 unsafe impl Send for Port {}
 unsafe impl Sync for Port {}
 
 impl Port {
-    fn new(raw: sys::tpw_filter_port_h) -> Result<Self> {
-        NonNull::new(raw).map(Port).ok_or(Error::CreateFailed)
-    }
-
-    /// What kind of data this port carries.
-    pub fn data_type(self) -> Option<DataType> {
-        DataType::from_raw(unsafe { sys::tpw_filter_port_get_type(self.as_raw()) })
-    }
-
-    /// Keeps re-presenting the last buffer on cycles where no new one
-    /// arrived, so a slow input does not read as empty next to a fast one.
-    ///
-    /// [`PortBuffer::is_fresh`] tells the two cases apart.
-    pub fn set_hold(self, enable: bool) -> Result<()> {
-        check(unsafe { sys::tpw_filter_port_set_hold(self.as_raw(), enable) })
-    }
-
-    /// Links this port to a node, by name or `object.serial`, with no session
-    /// manager involved.
-    ///
-    /// Only an input port on a started filter can link; before the start it is
-    /// [`Error::NotConfigured`]. A target naming no node or port is
-    /// [`Error::NotFound`], a link that fails to negotiate is
-    /// [`Error::InvalidFormat`], and one that does not negotiate in time is
-    /// [`Error::Timeout`].
-    pub fn link(self, target: &str) -> Result<()> {
-        with_cstr(target, |target| unsafe {
-            sys::tpw_filter_port_link(self.as_raw(), target.as_ptr())
-        })
-        .and_then(check)
-    }
-
-    /// Drops the links [`Port::link`] made.
-    pub fn unlink(self) -> Result<()> {
-        check(unsafe { sys::tpw_filter_port_unlink(self.as_raw()) })
-    }
-
-    /// Enqueues one event, whose data the library copies.
-    ///
-    /// On an output port this appends to the current cycle's outgoing events
-    /// and is only valid from within the processing callback. On an input port
-    /// it stages the event for the next cycle and may be called at any time.
-    pub fn push_event(self, event: &Event<'_>) -> Result<()> {
-        let key = match event.key {
-            Some(key) => Some(CString::new(key).map_err(|_| Error::InvalidString)?),
-            None => None,
-        };
-        let raw = sys::tpw_event {
-            offset: event.offset,
-            kind: event.kind.to_raw(),
-            key: key.as_ref().map_or(std::ptr::null(), |k| k.as_ptr()),
-            data: event.data.as_ptr().cast::<c_void>(),
-            size: event.data.len(),
-        };
-        check(unsafe { sys::tpw_filter_port_push_event(self.as_raw(), &raw) })
-    }
-
     /// The raw handle, for calls this binding does not cover.
+    ///
+    /// It is valid only while the [`Filter`] that created the port is alive.
     pub fn as_raw(self) -> sys::tpw_filter_port_h {
         self.0.as_ptr()
     }
+}
+
+/// Enqueues one event on `port`, whose data the library copies.
+///
+/// # Safety
+/// `port` must be alive, and an output port may only be passed from within
+/// the processing callback.
+unsafe fn push_event(port: sys::tpw_filter_port_h, event: &Event<'_>) -> Result<()> {
+    let key = match event.key {
+        Some(key) => Some(CString::new(key).map_err(|_| Error::InvalidString)?),
+        None => None,
+    };
+    let raw = sys::tpw_event {
+        offset: event.offset,
+        kind: event.kind.to_raw(),
+        key: key.as_ref().map_or(std::ptr::null(), |k| k.as_ptr()),
+        data: event.data.as_ptr().cast::<c_void>(),
+        size: event.data.len(),
+    };
+    check(sys::tpw_filter_port_push_event(port, &raw))
 }
 
 /// One port's slot in a processing cycle.
@@ -458,6 +525,16 @@ impl PortBuffer {
     /// Every event this input event port received this cycle.
     pub fn events(&self) -> impl Iterator<Item = Event<'_>> + '_ {
         (0..self.event_count()).filter_map(|i| self.event(i).ok())
+    }
+
+    /// Enqueues one event on this port, copying its data.
+    ///
+    /// On an output event port it joins this cycle's outgoing events; on an
+    /// input one it is staged for the next cycle.
+    pub fn push_event(&mut self, event: &Event<'_>) -> Result<()> {
+        // A slot exists only for the length of the cycle, so its port is alive
+        // and this is the processing callback.
+        unsafe { push_event(self.0.port, event) }
     }
 }
 

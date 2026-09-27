@@ -159,11 +159,35 @@ fn a_filter_takes_ports_and_starts() {
         .expect("output port");
 
     assert_ne!(input, output, "two ports must not share an identity");
-    assert_eq!(input.data_type(), Some(DataType::Audio));
-    assert_eq!(output.data_type(), Some(DataType::Audio));
+    assert_eq!(filter.port_data_type(input), Some(DataType::Audio));
+    assert_eq!(filter.port_data_type(output), Some(DataType::Audio));
+    assert_eq!(filter.port_direction(input), Some(PortDirection::Input));
+    assert_eq!(filter.port_direction(output), Some(PortDirection::Output));
 
     filter.start().expect("start");
     filter.stop(false).expect("stop");
+}
+
+#[test]
+#[ignore = "needs a running PipeWire daemon with a null sink"]
+fn a_filter_refuses_a_port_it_did_not_create() {
+    let owner = Filter::new("tpw-smoke-owner", |_| {}).expect("a filter needs a daemon");
+    let other = Filter::new("tpw-smoke-other", |_| {}).expect("a filter needs a daemon");
+    let config = AudioConfig::new(48_000, 2).with_format(SampleFormat::F32);
+    let port = owner
+        .add_audio_port(PortDirection::Input, &config)
+        .expect("input port");
+
+    // Each of these would hand C a port the filter does not own; the check
+    // has to stop them before they get there.
+    assert_eq!(other.port_data_type(port), None);
+    assert_eq!(other.set_port_hold(port, true), Err(Error::InvalidArgument));
+    assert_eq!(other.unlink_port(port), Err(Error::InvalidArgument));
+    assert_eq!(
+        other.push_port_data(port, &[0; 8], None),
+        Err(Error::InvalidArgument)
+    );
+    assert_eq!(owner.set_port_hold(port, true), Ok(()));
 }
 
 #[test]
@@ -209,9 +233,12 @@ fn a_filter_port_linked_to_a_missing_node_is_not_found() {
         )
         .expect("input port");
 
-    assert_eq!(input.link(&sink()), Err(Error::NotConfigured));
+    assert_eq!(filter.link_port(input, &sink()), Err(Error::NotConfigured));
     filter.start().expect("start");
-    assert_eq!(input.link("tpw-smoke-no-such-node"), Err(Error::NotFound));
+    assert_eq!(
+        filter.link_port(input, "tpw-smoke-no-such-node"),
+        Err(Error::NotFound)
+    );
     filter.stop(false).expect("stop");
 }
 
