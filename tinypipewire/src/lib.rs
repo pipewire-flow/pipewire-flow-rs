@@ -64,6 +64,11 @@
 //! joins its threads, so no callback can still be running afterwards; dropped
 //! from inside its own callback, it is left running instead.
 //!
+//! A panic in a callback never unwinds into C. The panic hook reports it as
+//! usual and that one call is abandoned, but the handle keeps running and
+//! calls the same closure again on the next cycle, so whatever state the
+//! closure owns has to stay usable after a panic.
+//!
 //! Handle methods take `&self` even when they change the handle, because the
 //! C library locks PipeWire's thread loop inside each call. That is interior
 //! mutability, not a promise of thread safety: both handles are `Send` and
