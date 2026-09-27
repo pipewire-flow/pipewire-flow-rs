@@ -117,6 +117,25 @@ jobs:
           pw-cli ls Node >&2
           exit 1
 
+      # A virtual source gives a capture stream a node to be wired to. It is
+      # the same null node as the sink, so it drives the graph the same way.
+      - name: Create a null source
+        run: |
+          pw-cli create-node adapter '{
+            factory.name  = support.null-audio-sink
+            node.name     = tpw-smoke-source
+            media.class   = Audio/Source/Virtual
+            object.linger = true
+            audio.position = [ FL FR ]
+          }'
+          for _ in $(seq 1 20); do
+            pw-cli ls Node | grep -q tpw-smoke-source && exit 0
+            sleep 0.5
+          done
+          echo "the null source never appeared in the graph:" >&2
+          pw-cli ls Node >&2
+          exit 1
+
       # Autoconnect is what wires a stream to its target, and only a session
       # manager does that wiring.
       - name: Start the session manager

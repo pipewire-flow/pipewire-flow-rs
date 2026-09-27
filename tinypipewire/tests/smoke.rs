@@ -1,8 +1,9 @@
 //! Checks that need a live PipeWire daemon with a null sink to talk to.
 //!
 //! They are ignored by default so `cargo test` stays runnable anywhere; CI
-//! creates the sink and then runs them with `--ignored`. Set `TPW_SMOKE_SINK`
-//! to point them at a different node.
+//! creates the sink, and a null source for capture, then runs them with
+//! `--ignored`. Set `TPW_SMOKE_SINK` or `TPW_SMOKE_SOURCE` to point them at
+//! different nodes.
 //!
 //! What these cover that the daemon-free tests cannot: the callback
 //! trampolines actually firing, the target list coming back with real
@@ -28,6 +29,10 @@ const DEADLINE: Duration = Duration::from_secs(5);
 
 fn sink() -> String {
     std::env::var("TPW_SMOKE_SINK").unwrap_or_else(|_| "tpw-smoke-sink".to_string())
+}
+
+fn source() -> String {
+    std::env::var("TPW_SMOKE_SOURCE").unwrap_or_else(|_| "tpw-smoke-source".to_string())
 }
 
 /// Waits for `ready` to hold, or gives up after [`DEADLINE`].
@@ -95,6 +100,38 @@ fn the_playback_callback_runs_and_its_writes_are_taken() {
     assert!(
         written.load(Ordering::Relaxed) > 0,
         "the callback ran {calls} times but was never given a byte to write"
+    );
+}
+
+#[test]
+#[ignore = "needs a running PipeWire daemon with a null source"]
+fn the_capture_callback_runs_and_is_handed_bytes() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let received = Arc::new(AtomicUsize::new(0));
+
+    let (n, bytes) = (Arc::clone(&calls), Arc::clone(&received));
+    let stream = Stream::audio_capture(move |buf| {
+        n.fetch_add(1, Ordering::Relaxed);
+        bytes.fetch_add(buf.data().map_or(0, <[u8]>::len), Ordering::Relaxed);
+    })
+    .expect("a capture stream needs a daemon");
+
+    stream
+        .set_routing(Routing::Autoconnect(Some(&source())))
+        .expect("target the source");
+    stream
+        .set_audio_config(&AudioConfig::new(48_000, 2).with_format(SampleFormat::F32))
+        .expect("the source is stereo f32");
+    stream.start().expect("start");
+
+    wait_for(|| received.load(Ordering::Relaxed) > 0);
+    stream.stop(false).expect("stop");
+
+    let calls = calls.load(Ordering::Relaxed);
+    assert!(calls > 0, "the capture callback never ran");
+    assert!(
+        received.load(Ordering::Relaxed) > 0,
+        "the callback ran {calls} times but was never handed a byte"
     );
 }
 
