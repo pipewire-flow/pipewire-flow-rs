@@ -44,7 +44,7 @@ tinypipewire = "0.1"
 
 Capture from the default microphone for five seconds:
 
-```rust
+```rust,no_run
 use tinypipewire::{AudioConfig, Stream};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

@@ -98,6 +98,16 @@ pub use format::{
 };
 pub use stream::{CaptureBuffer, PlaybackBuffer, Stream};
 
+// The READMEs' examples are compiled as doctests, so an API they name cannot
+// be renamed without them following.
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+struct CrateReadme;
+
+#[cfg(doctest)]
+#[doc = include_str!("../../README.md")]
+struct WorkspaceReadme;
+
 /// The raw FFI bindings this crate is built on.
 pub use tinypipewire_sys as sys;
 
