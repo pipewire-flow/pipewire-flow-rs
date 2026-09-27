@@ -8,6 +8,8 @@
 
 #![allow(non_upper_case_globals, non_camel_case_types, non_snake_case)]
 #![allow(clippy::all)]
+// The C headers' Doxygen markers, such as `@param[in]`, read as broken links.
+#![allow(rustdoc::broken_intra_doc_links)]
 #![no_std]
 
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
