@@ -30,7 +30,7 @@ enum Delivery {
 /// stream handle is.
 struct StreamState {
     // Only PipeWire's loop thread ever touches this, and only between
-    // tpw_stream_start() and tpw_stream_destroy().
+    // pwf_stream_start() and pwf_stream_destroy().
     delivery: UnsafeCell<Delivery>,
     error: Mutex<Option<ErrorFn>>,
 }
@@ -71,7 +71,7 @@ struct StreamState {
 /// compiler still refuses to share one across threads. It is `Send`, so a
 /// stream can be moved to another thread and driven from there.
 pub struct Stream {
-    handle: sys::tpw_stream_h,
+    handle: *mut sys::pwf_stream,
     // Boxed so the address handed to C stays put while the Stream moves, and
     // released by hand because a drop inside a callback must leak it.
     state: ManuallyDrop<Box<StreamState>>,
@@ -115,7 +115,7 @@ impl Stream {
         F: FnMut(&mut PlaybackBuffer<'_>) + Send + 'static,
     {
         Self::create(Delivery::Playback(Box::new(callback)), |state| unsafe {
-            sys::tpw_stream_create_playback(Some(on_playback), state)
+            sys::pwf_stream_create_playback(Some(on_playback), state)
         })
     }
 
@@ -126,13 +126,13 @@ impl Stream {
         F: FnMut(CaptureBuffer<'_>) + Send + 'static,
     {
         Self::create(Delivery::Capture(Box::new(callback)), |state| unsafe {
-            sys::tpw_stream_create(data_type.to_raw(), Some(on_capture), state)
+            sys::pwf_stream_create(data_type.to_raw(), Some(on_capture), state)
         })
     }
 
     fn create(
         delivery: Delivery,
-        create: impl FnOnce(*mut c_void) -> sys::tpw_stream_h,
+        create: impl FnOnce(*mut c_void) -> *mut sys::pwf_stream,
     ) -> Result<Self> {
         let state = Box::new(StreamState {
             delivery: UnsafeCell::new(delivery),
@@ -157,12 +157,12 @@ impl Stream {
         F: FnMut(Error) + Send + 'static,
     {
         *self.state.error.lock().unwrap() = Some(Box::new(callback));
-        check(unsafe { sys::tpw_stream_set_error_cb(self.handle, Some(on_error)) })
+        check(unsafe { sys::pwf_stream_set_error_callback(self.handle, Some(on_error)) })
     }
 
     /// Clears the error callback.
     pub fn clear_error_callback(&self) -> Result<()> {
-        check(unsafe { sys::tpw_stream_set_error_cb(self.handle, None) })?;
+        check(unsafe { sys::pwf_stream_set_error_callback(self.handle, None) })?;
         *self.state.error.lock().unwrap() = None;
         Ok(())
     }
@@ -181,12 +181,12 @@ impl Stream {
         // Each variant sets the whole mode, not just the half its matching C
         // setter covers: a target left behind would still route the stream,
         // and the C library refuses to turn autoconnect off while one is set.
-        check(unsafe { sys::tpw_stream_set_target(self.handle, std::ptr::null()) })?;
-        check(unsafe { sys::tpw_stream_set_autoconnect(self.handle, autoconnect) })?;
+        check(unsafe { sys::pwf_stream_set_target(self.handle, std::ptr::null()) })?;
+        check(unsafe { sys::pwf_stream_set_autoconnect(self.handle, autoconnect) })?;
 
         match target {
             Some(target) => with_cstr(target, |target| unsafe {
-                sys::tpw_stream_set_target(self.handle, target.as_ptr())
+                sys::pwf_stream_set_target(self.handle, target.as_ptr())
             })
             .and_then(check),
             None => Ok(()),
@@ -204,10 +204,10 @@ impl Stream {
     pub fn set_role(&self, role: Option<&str>) -> Result<()> {
         match role {
             Some(role) => with_cstr(role, |role| unsafe {
-                sys::tpw_stream_set_role(self.handle, role.as_ptr())
+                sys::pwf_stream_set_role(self.handle, role.as_ptr())
             })
             .and_then(check),
-            None => check(unsafe { sys::tpw_stream_set_role(self.handle, std::ptr::null()) }),
+            None => check(unsafe { sys::pwf_stream_set_role(self.handle, std::ptr::null()) }),
         }
     }
 
@@ -221,7 +221,7 @@ impl Stream {
         unsafe {
             try_collect_list(
                 16,
-                |out, len, found| sys::tpw_stream_get_target_list(self.handle, out, len, found),
+                |out, len, found| sys::pwf_stream_get_target_list(self.handle, out, len, found),
                 TargetInfo::from_raw,
             )
         }
@@ -239,7 +239,7 @@ impl Stream {
             try_collect_list(
                 32,
                 |out, len, found| {
-                    sys::tpw_stream_get_target_video_formats(self.handle, name, out, len, found)
+                    sys::pwf_stream_get_target_video_formats(self.handle, name, out, len, found)
                 },
                 VideoFormatInfo::from_raw,
             )
@@ -259,7 +259,7 @@ impl Stream {
     /// that a link failed to negotiate.
     pub fn link(&self, target: &str) -> Result<()> {
         with_cstr(target, |target| unsafe {
-            sys::tpw_stream_link(self.handle, target.as_ptr())
+            sys::pwf_stream_link(self.handle, target.as_ptr())
         })
         .and_then(check)
     }
@@ -267,19 +267,19 @@ impl Stream {
     /// Drops the links [`Stream::link`] made, or reports
     /// [`Error::NotConfigured`] when there are none.
     pub fn unlink(&self) -> Result<()> {
-        check(unsafe { sys::tpw_stream_unlink(self.handle) })
+        check(unsafe { sys::pwf_stream_unlink(self.handle) })
     }
 
     /// Sets the audio format and connects the stream.
     pub fn set_audio_config(&self, config: &AudioConfig) -> Result<()> {
         let raw = config.to_raw();
-        check(unsafe { sys::tpw_stream_set_audio_config(self.handle, &raw) })
+        check(unsafe { sys::pwf_stream_set_audio_config(self.handle, &raw) })
     }
 
     /// Sets the video format and connects the stream.
     pub fn set_video_config(&self, config: &VideoConfig) -> Result<()> {
         let raw = config.to_raw();
-        check(unsafe { sys::tpw_stream_set_video_config(self.handle, &raw) })
+        check(unsafe { sys::pwf_stream_set_video_config(self.handle, &raw) })
     }
 
     /// Sets the video format and asks for a particular buffer memory type.
@@ -289,28 +289,28 @@ impl Stream {
     /// [`CaptureBuffer::dmabuf_planes`] reads.
     pub fn set_video_config_with(&self, config: &VideoConfig, memory: PortMemory) -> Result<()> {
         let raw = config.to_raw();
-        let opts = sys::tpw_stream_dmabuf_opts {
+        let opts = sys::pwf_stream_dmabuf_opts {
             memory: memory.to_raw(),
             reserved: [0; 2],
         };
-        check(unsafe { sys::tpw_stream_set_video_config_ex(self.handle, &raw, &opts) })
+        check(unsafe { sys::pwf_stream_set_video_config_ex(self.handle, &raw, &opts) })
     }
 
     /// Starts the stream, after which the buffer callback runs each cycle.
     pub fn start(&self) -> Result<()> {
-        check(unsafe { sys::tpw_stream_start(self.handle) })
+        check(unsafe { sys::pwf_stream_start(self.handle) })
     }
 
     /// Stops the stream. With `drain` set, a playback stream first plays out
     /// what it has already queued.
     pub fn stop(&self, drain: bool) -> Result<()> {
-        check(unsafe { sys::tpw_stream_stop(self.handle, drain) })
+        check(unsafe { sys::pwf_stream_stop(self.handle, drain) })
     }
 
     /// The raw handle, for calls this binding does not cover.
     ///
     /// The handle stays owned by this `Stream` and must not be destroyed.
-    pub fn as_raw(&self) -> sys::tpw_stream_h {
+    pub fn as_raw(&self) -> *mut sys::pwf_stream {
         self.handle
     }
 }
@@ -325,7 +325,7 @@ impl Drop for Stream {
         // Destroying joins the loop thread, so no callback can be running by
         // the time the boxed state goes with it.
         unsafe {
-            sys::tpw_stream_destroy(self.handle);
+            sys::pwf_stream_destroy(self.handle);
             ManuallyDrop::drop(&mut self.state);
         }
     }
@@ -341,8 +341,8 @@ impl std::fmt::Debug for Stream {
 
 /// One captured buffer, borrowed for the length of the callback.
 pub struct CaptureBuffer<'a> {
-    stream: sys::tpw_stream_h,
-    raw: &'a sys::tpw_stream_buffer,
+    stream: *mut sys::pwf_stream,
+    raw: &'a sys::pwf_stream_buffer,
 }
 
 impl<'a> CaptureBuffer<'a> {
@@ -368,7 +368,7 @@ impl<'a> CaptureBuffer<'a> {
         unsafe {
             collect_list(
                 4,
-                |out, len| sys::tpw_stream_get_dmabuf_planes(self.stream, out, len),
+                |out, len| sys::pwf_stream_get_dmabuf_planes(self.stream, out, len),
                 DmabufPlane::from_raw,
             )
         }
@@ -386,7 +386,7 @@ impl std::fmt::Debug for CaptureBuffer<'_> {
 
 /// The region a playback callback fills, borrowed for the length of the call.
 pub struct PlaybackBuffer<'a> {
-    raw: &'a mut sys::tpw_stream_playback_buffer,
+    raw: &'a mut sys::pwf_stream_playback_buffer,
 }
 
 impl PlaybackBuffer<'_> {
@@ -438,8 +438,8 @@ impl std::fmt::Debug for PlaybackBuffer<'_> {
 }
 
 unsafe extern "C" fn on_capture(
-    stream: sys::tpw_stream_h,
-    buf: *const sys::tpw_stream_buffer,
+    stream: *mut sys::pwf_stream,
+    buf: *const sys::pwf_stream_buffer,
     user_data: *mut c_void,
 ) {
     guard_callback(user_data, || {
@@ -453,8 +453,8 @@ unsafe extern "C" fn on_capture(
 }
 
 unsafe extern "C" fn on_playback(
-    _stream: sys::tpw_stream_h,
-    buf: *mut sys::tpw_stream_playback_buffer,
+    _stream: *mut sys::pwf_stream,
+    buf: *mut sys::pwf_stream_playback_buffer,
     user_data: *mut c_void,
 ) {
     guard_callback(user_data, || {
@@ -468,7 +468,7 @@ unsafe extern "C" fn on_playback(
 }
 
 unsafe extern "C" fn on_error(
-    _stream: sys::tpw_stream_h,
+    _stream: *mut sys::pwf_stream,
     error_code: c_int,
     user_data: *mut c_void,
 ) {

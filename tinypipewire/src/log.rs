@@ -24,22 +24,22 @@ pub enum LogLevel {
 }
 
 impl LogLevel {
-    fn to_raw(self) -> sys::tpw_log_level {
+    fn to_raw(self) -> sys::pwf_log_level {
         match self {
-            LogLevel::Error => sys::TPW_LOG_ERROR,
-            LogLevel::Warning => sys::TPW_LOG_WARNING,
-            LogLevel::Info => sys::TPW_LOG_INFO,
-            LogLevel::Debug => sys::TPW_LOG_DEBUG,
-            LogLevel::Verbose => sys::TPW_LOG_VERBOSE,
+            LogLevel::Error => sys::PWF_LOG_ERROR,
+            LogLevel::Warning => sys::PWF_LOG_WARNING,
+            LogLevel::Info => sys::PWF_LOG_INFO,
+            LogLevel::Debug => sys::PWF_LOG_DEBUG,
+            LogLevel::Verbose => sys::PWF_LOG_VERBOSE,
         }
     }
 
-    fn from_raw(raw: sys::tpw_log_level) -> Self {
+    fn from_raw(raw: sys::pwf_log_level) -> Self {
         match raw {
-            sys::TPW_LOG_ERROR => LogLevel::Error,
-            sys::TPW_LOG_WARNING => LogLevel::Warning,
-            sys::TPW_LOG_INFO => LogLevel::Info,
-            sys::TPW_LOG_DEBUG => LogLevel::Debug,
+            sys::PWF_LOG_ERROR => LogLevel::Error,
+            sys::PWF_LOG_WARNING => LogLevel::Warning,
+            sys::PWF_LOG_INFO => LogLevel::Info,
+            sys::PWF_LOG_DEBUG => LogLevel::Debug,
             _ => LogLevel::Verbose,
         }
     }
@@ -67,7 +67,7 @@ static SINK: Mutex<Option<LogFn>> = Mutex::new(None);
 /// Sets the minimum severity delivered; anything less severe is dropped
 /// before it is formatted. The library's default is [`LogLevel::Warning`].
 pub fn set_level(level: LogLevel) {
-    unsafe { sys::tpw_log_set_level(level.to_raw()) };
+    unsafe { sys::pwf_log_set_level(level.to_raw()) };
 }
 
 /// Routes the library's diagnostics to `callback`, replacing any callback set
@@ -80,17 +80,17 @@ where
     F: FnMut(Record<'_>) + Send + 'static,
 {
     *SINK.lock().unwrap() = Some(Box::new(callback));
-    unsafe { sys::tpw_log_set_callback(Some(on_log), std::ptr::null_mut()) };
+    unsafe { sys::pwf_log_set_callback(Some(on_log), std::ptr::null_mut()) };
 }
 
 /// Clears the callback, sending diagnostics back to stderr.
 pub fn clear_callback() {
-    unsafe { sys::tpw_log_set_callback(None, std::ptr::null_mut()) };
+    unsafe { sys::pwf_log_set_callback(None, std::ptr::null_mut()) };
     *SINK.lock().unwrap() = None;
 }
 
 unsafe extern "C" fn on_log(
-    level: sys::tpw_log_level,
+    level: sys::pwf_log_level,
     file: *const c_char,
     line: c_int,
     message: *const c_char,
