@@ -30,7 +30,7 @@ fn main() {
     write_bindings(&include_paths);
 }
 
-/// Writes `tpw/tpw_version.h` from the submodule's template into `OUT_DIR`
+/// Writes `pwf/pwf_version.h` from the submodule's template into `OUT_DIR`
 /// and returns the include directory holding it.
 ///
 /// Meson generates that header at build time, so it is missing whenever the
@@ -38,7 +38,7 @@ fn main() {
 /// the include path, so an installed copy still wins.
 fn version_header_fallback() -> Option<PathBuf> {
     let src = vendor_dir();
-    let template = std::fs::read_to_string(src.join("include/tpw/tpw_version.h.in")).ok()?;
+    let template = std::fs::read_to_string(src.join("include/pwf/pwf_version.h.in")).ok()?;
     let project = std::fs::read_to_string(src.join("meson.build")).ok()?;
 
     let version = project
@@ -47,14 +47,14 @@ fn version_header_fallback() -> Option<PathBuf> {
     let mut parts = version.split('.');
     let (major, minor, patch) = (parts.next()?, parts.next()?, parts.next()?);
 
-    let dir = PathBuf::from(env::var("OUT_DIR").unwrap()).join("version-include/tpw");
+    let dir = PathBuf::from(env::var("OUT_DIR").unwrap()).join("version-include/pwf");
     std::fs::create_dir_all(&dir).ok()?;
     std::fs::write(
-        dir.join("tpw_version.h"),
+        dir.join("pwf_version.h"),
         template
-            .replace("@TPW_VERSION_MAJOR@", major)
-            .replace("@TPW_VERSION_MINOR@", minor)
-            .replace("@TPW_VERSION_PATCH@", patch),
+            .replace("@PWF_VERSION_MAJOR@", major)
+            .replace("@PWF_VERSION_MINOR@", minor)
+            .replace("@PWF_VERSION_PATCH@", patch),
     )
     .ok()?;
     dir.parent().map(Path::to_path_buf)
@@ -68,12 +68,12 @@ fn link() -> Vec<PathBuf> {
     }
 
     match pkg_config::Config::new()
-        .atleast_version("0.11.0")
-        .probe("tinypipewire")
+        .atleast_version("0.12.0")
+        .probe("pipewire-flow")
     {
         Ok(lib) => lib.include_paths,
         Err(err) => {
-            println!("cargo:warning=pkg-config could not find an installed tinypipewire ({err}); building the vendored copy instead");
+            println!("cargo:warning=pkg-config could not find an installed pipewire-flow ({err}); building the vendored copy instead");
             build_vendored()
         }
     }
@@ -109,16 +109,16 @@ fn build_vendored() -> Vec<PathBuf> {
         "cargo:rustc-link-search=native={}",
         build_dir.join("src").display()
     );
-    println!("cargo:rustc-link-lib=static=tinypipewire");
+    println!("cargo:rustc-link-lib=static=pipewire-flow");
     pkg_config::Config::new()
         .atleast_version("0.3.50")
         .probe("libpipewire-0.3")
-        .expect("libpipewire-0.3 development files are required to build tinypipewire");
+        .expect("libpipewire-0.3 development files are required to build pipewire-flow");
 
     println!("cargo:rerun-if-changed={}", src.join("src").display());
     println!("cargo:rerun-if-changed={}", src.join("include").display());
 
-    // tpw_version.h is generated into the build directory, the rest ship in the tree.
+    // pwf_version.h is generated into the build directory, the rest ship in the tree.
     vec![src.join("include"), build_dir.join("include")]
 }
 
@@ -146,8 +146,8 @@ fn write_bindings(include_paths: &[PathBuf]) {
             // Installed headers sit on the system include path, where clang
             // drops comments unless asked to keep them.
             .clang_arg("-fretain-comments-from-system-headers")
-            .allowlist_item("tpw_.*")
-            .allowlist_item("TPW_.*")
+            .allowlist_item("pwf_.*")
+            .allowlist_item("PWF_.*")
             .derive_default(true)
             .derive_eq(true)
             .use_core()

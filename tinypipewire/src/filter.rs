@@ -24,7 +24,7 @@ type ErrorFn = Box<dyn FnMut(Option<Port>, Error) + Send>;
 /// filter handle is.
 struct FilterState {
     // Only PipeWire's loop thread ever touches this, and only between
-    // tpw_filter_start() and tpw_filter_destroy().
+    // pwf_filter_start() and pwf_filter_destroy().
     process: UnsafeCell<ProcessFn>,
     error: Mutex<Option<ErrorFn>>,
 }
@@ -40,10 +40,10 @@ pub enum PortDirection {
 }
 
 impl PortDirection {
-    fn to_raw(self) -> sys::tpw_filter_port_direction {
+    fn to_raw(self) -> sys::pwf_filter_port_direction {
         match self {
-            PortDirection::Input => sys::TPW_FILTER_PORT_INPUT,
-            PortDirection::Output => sys::TPW_FILTER_PORT_OUTPUT,
+            PortDirection::Input => sys::PWF_FILTER_PORT_INPUT,
+            PortDirection::Output => sys::PWF_FILTER_PORT_OUTPUT,
         }
     }
 }
@@ -83,7 +83,7 @@ impl PortDirection {
 /// calls, so this is genuine interior mutability rather than a claim of
 /// thread safety. `Filter` is `Send` but not `Sync`.
 pub struct Filter {
-    handle: sys::tpw_filter_h,
+    handle: *mut sys::pwf_filter,
     // Boxed so the address handed to C stays put while the Filter moves, and
     // released by hand because a drop inside a callback must leak it.
     state: ManuallyDrop<Box<FilterState>>,
@@ -120,7 +120,7 @@ impl Filter {
         });
         let user_data = &*state as *const FilterState as *mut c_void;
         let handle = with_cstr(name, |name| unsafe {
-            sys::tpw_filter_create(name.as_ptr(), Some(on_process), user_data)
+            sys::pwf_filter_create(name.as_ptr(), Some(on_process), user_data)
         })?;
         if handle.is_null() {
             return Err(Error::CreateFailed);
@@ -141,12 +141,12 @@ impl Filter {
         F: FnMut(Option<Port>, Error) + Send + 'static,
     {
         *self.state.error.lock().unwrap() = Some(Box::new(callback));
-        check(unsafe { sys::tpw_filter_set_error_cb(self.handle, Some(on_error)) })
+        check(unsafe { sys::pwf_filter_set_error_callback(self.handle, Some(on_error)) })
     }
 
     /// Clears the error callback.
     pub fn clear_error_callback(&self) -> Result<()> {
-        check(unsafe { sys::tpw_filter_set_error_cb(self.handle, None) })?;
+        check(unsafe { sys::pwf_filter_set_error_callback(self.handle, None) })?;
         *self.state.error.lock().unwrap() = None;
         Ok(())
     }
@@ -155,7 +155,7 @@ impl Filter {
     pub fn add_audio_port(&self, direction: PortDirection, config: &AudioConfig) -> Result<Port> {
         let raw = config.to_raw();
         self.register(direction, unsafe {
-            sys::tpw_filter_add_audio_port(self.handle, direction.to_raw(), &raw)
+            sys::pwf_filter_add_audio_port(self.handle, direction.to_raw(), &raw)
         })
     }
 
@@ -163,7 +163,7 @@ impl Filter {
     pub fn add_video_port(&self, direction: PortDirection, config: &VideoConfig) -> Result<Port> {
         let raw = config.to_raw();
         self.register(direction, unsafe {
-            sys::tpw_filter_add_video_port(self.handle, direction.to_raw(), &raw)
+            sys::pwf_filter_add_video_port(self.handle, direction.to_raw(), &raw)
         })
     }
 
@@ -178,12 +178,12 @@ impl Filter {
         memory: PortMemory,
     ) -> Result<Port> {
         let raw = config.to_raw();
-        let opts = sys::tpw_filter_port_opts {
+        let opts = sys::pwf_filter_port_opts {
             memory: memory.to_raw(),
             reserved: [0; 2],
         };
         self.register(direction, unsafe {
-            sys::tpw_filter_add_video_port_ex(self.handle, direction.to_raw(), &raw, &opts)
+            sys::pwf_filter_add_video_port_ex(self.handle, direction.to_raw(), &raw, &opts)
         })
     }
 
@@ -191,7 +191,7 @@ impl Filter {
     /// no format negotiation.
     pub fn add_signal_port(&self, direction: PortDirection) -> Result<Port> {
         self.register(direction, unsafe {
-            sys::tpw_filter_add_signal_port(self.handle, direction.to_raw())
+            sys::pwf_filter_add_signal_port(self.handle, direction.to_raw())
         })
     }
 
@@ -199,14 +199,14 @@ impl Filter {
     /// continuous stream.
     pub fn add_event_port(&self, direction: PortDirection) -> Result<Port> {
         self.register(direction, unsafe {
-            sys::tpw_filter_add_event_port(self.handle, direction.to_raw())
+            sys::pwf_filter_add_event_port(self.handle, direction.to_raw())
         })
     }
 
     /// Records a port the C library just created, so later calls can check it.
-    fn register(&self, direction: PortDirection, raw: sys::tpw_filter_port_h) -> Result<Port> {
+    fn register(&self, direction: PortDirection, raw: *mut sys::pwf_filter_port) -> Result<Port> {
         let port = NonNull::new(raw).map(Port).ok_or(Error::CreateFailed)?;
-        let data_type = DataType::from_raw(unsafe { sys::tpw_filter_port_get_type(raw) });
+        let data_type = DataType::from_raw(unsafe { sys::pwf_filter_port_get_type(raw) });
         self.ports.borrow_mut().push(PortEntry {
             port,
             direction,
@@ -243,7 +243,7 @@ impl Filter {
     /// [`PortBuffer::is_fresh`] tells the two cases apart.
     pub fn set_port_hold(&self, port: Port, enable: bool) -> Result<()> {
         let port = self.entry(port)?.port;
-        check(unsafe { sys::tpw_filter_port_set_hold(port.as_raw(), enable) })
+        check(unsafe { sys::pwf_filter_port_set_hold(port.as_raw(), enable) })
     }
 
     /// Links `port` to a node, by name or `object.serial`, with no session
@@ -257,7 +257,7 @@ impl Filter {
     pub fn link_port(&self, port: Port, target: &str) -> Result<()> {
         let port = self.entry(port)?.port;
         with_cstr(target, |target| unsafe {
-            sys::tpw_filter_port_link(port.as_raw(), target.as_ptr())
+            sys::pwf_filter_port_link(port.as_raw(), target.as_ptr())
         })
         .and_then(check)
     }
@@ -265,7 +265,7 @@ impl Filter {
     /// Drops the links [`Filter::link_port`] made on `port`.
     pub fn unlink_port(&self, port: Port) -> Result<()> {
         let port = self.entry(port)?.port;
-        check(unsafe { sys::tpw_filter_port_unlink(port.as_raw()) })
+        check(unsafe { sys::pwf_filter_port_unlink(port.as_raw()) })
     }
 
     /// Stages `event` for input event `port` to receive on the next cycle,
@@ -291,7 +291,7 @@ impl Filter {
             try_collect_list(
                 32,
                 |out, len, found| {
-                    sys::tpw_filter_get_target_video_formats(
+                    sys::pwf_filter_get_target_video_formats(
                         self.handle,
                         target.as_ptr(),
                         out,
@@ -308,7 +308,7 @@ impl Filter {
     /// for filters whose slowest input would otherwise set the pace.
     pub fn set_period_hint(&self, max_period: Duration) -> Result<()> {
         let nanos = u32::try_from(max_period.as_nanos()).unwrap_or(u32::MAX);
-        check(unsafe { sys::tpw_filter_set_period_hint(self.handle, nanos) })
+        check(unsafe { sys::pwf_filter_set_period_hint(self.handle, nanos) })
     }
 
     /// Stages `data` for `port` to receive on the next cycle, with no
@@ -320,7 +320,7 @@ impl Filter {
     pub fn push_port_data(&self, port: Port, data: &[u8], pts: Option<i64>) -> Result<()> {
         let port = self.entry(port)?.port;
         check(unsafe {
-            sys::tpw_filter_push_port_data(
+            sys::pwf_filter_push_port_data(
                 self.handle,
                 port.as_raw(),
                 data.as_ptr().cast::<c_void>(),
@@ -332,19 +332,19 @@ impl Filter {
 
     /// Starts the filter, after which the processing callback runs each cycle.
     pub fn start(&self) -> Result<()> {
-        check(unsafe { sys::tpw_filter_start(self.handle) })
+        check(unsafe { sys::pwf_filter_start(self.handle) })
     }
 
     /// Stops the filter. With `drain` set, output ports first publish what
     /// they have already produced.
     pub fn stop(&self, drain: bool) -> Result<()> {
-        check(unsafe { sys::tpw_filter_stop(self.handle, drain) })
+        check(unsafe { sys::pwf_filter_stop(self.handle, drain) })
     }
 
     /// The raw handle, for calls this binding does not cover.
     ///
     /// The handle stays owned by this `Filter` and must not be destroyed.
-    pub fn as_raw(&self) -> sys::tpw_filter_h {
+    pub fn as_raw(&self) -> *mut sys::pwf_filter {
         self.handle
     }
 }
@@ -359,7 +359,7 @@ impl Drop for Filter {
         // Destroying joins the loop thread, so no callback can be running by
         // the time the boxed state goes with it.
         unsafe {
-            sys::tpw_filter_destroy(self.handle);
+            sys::pwf_filter_destroy(self.handle);
             ManuallyDrop::drop(&mut self.state);
         }
     }
@@ -381,7 +381,7 @@ impl std::fmt::Debug for Filter {
 /// be shared into the processing callback, which is registered before any port
 /// exists.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Port(NonNull<sys::tpw_filter_port>);
+pub struct Port(NonNull<sys::pwf_filter_port>);
 
 // A Port is never dereferenced on its own: the filter that owns it checks it
 // before passing it to C, and a processing cycle hands out only live ones.
@@ -392,7 +392,7 @@ impl Port {
     /// The raw handle, for calls this binding does not cover.
     ///
     /// It is valid only while the [`Filter`] that created the port is alive.
-    pub fn as_raw(self) -> sys::tpw_filter_port_h {
+    pub fn as_raw(self) -> *mut sys::pwf_filter_port {
         self.0.as_ptr()
     }
 }
@@ -402,19 +402,19 @@ impl Port {
 /// # Safety
 /// `port` must be alive, and an output port may only be passed from within
 /// the processing callback.
-unsafe fn push_event(port: sys::tpw_filter_port_h, event: &Event<'_>) -> Result<()> {
+unsafe fn push_event(port: *mut sys::pwf_filter_port, event: &Event<'_>) -> Result<()> {
     let key = match event.key {
         Some(key) => Some(CString::new(key).map_err(|_| Error::InvalidString)?),
         None => None,
     };
-    let raw = sys::tpw_event {
+    let raw = sys::pwf_event {
         offset: event.offset,
         kind: event.kind.to_raw(),
         key: key.as_ref().map_or(std::ptr::null(), |k| k.as_ptr()),
         data: event.data.as_ptr().cast::<c_void>(),
         size: event.data.len(),
     };
-    check(sys::tpw_filter_port_push_event(port, &raw))
+    check(sys::pwf_filter_port_push_event(port, &raw))
 }
 
 /// One port's slot in a processing cycle.
@@ -422,7 +422,7 @@ unsafe fn push_event(port: sys::tpw_filter_port_h, event: &Event<'_>) -> Result<
 /// The processing callback receives one of these per port, in the order the
 /// ports were added.
 #[repr(transparent)]
-pub struct PortBuffer(sys::tpw_filter_port_buffer);
+pub struct PortBuffer(sys::pwf_filter_port_buffer);
 
 impl PortBuffer {
     /// Which port this entry describes.
@@ -504,7 +504,7 @@ impl PortBuffer {
         unsafe {
             collect_list(
                 4,
-                |out, len| sys::tpw_filter_port_get_dmabuf_planes(&self.0, out, len),
+                |out, len| sys::pwf_filter_port_get_dmabuf_planes(&self.0, out, len),
                 DmabufPlane::from_raw,
             )
         }
@@ -512,13 +512,13 @@ impl PortBuffer {
 
     /// How many events an input event port received this cycle.
     pub fn event_count(&self) -> usize {
-        unsafe { sys::tpw_filter_port_get_event_count(self.0.port) }
+        unsafe { sys::pwf_filter_port_get_event_count(self.0.port) }
     }
 
     /// Reads this cycle's event at `index`, in delivery order.
     pub fn event(&self, index: usize) -> Result<Event<'_>> {
-        let mut raw: sys::tpw_event = unsafe { std::mem::zeroed() };
-        check(unsafe { sys::tpw_filter_port_get_event(self.0.port, index, &mut raw) })?;
+        let mut raw: sys::pwf_event = unsafe { std::mem::zeroed() };
+        check(unsafe { sys::pwf_filter_port_get_event(self.0.port, index, &mut raw) })?;
         Ok(unsafe { Event::from_raw(&raw) })
     }
 
@@ -565,20 +565,20 @@ pub enum EventKind {
 }
 
 impl EventKind {
-    fn to_raw(self) -> sys::tpw_event_kind {
+    fn to_raw(self) -> sys::pwf_event_kind {
         match self {
-            EventKind::Midi => sys::TPW_EVENT_MIDI,
-            EventKind::Osc => sys::TPW_EVENT_OSC,
-            EventKind::Property => sys::TPW_EVENT_PROPERTY,
-            EventKind::Unknown => sys::TPW_EVENT_UNKNOWN,
+            EventKind::Midi => sys::PWF_EVENT_MIDI,
+            EventKind::Osc => sys::PWF_EVENT_OSC,
+            EventKind::Property => sys::PWF_EVENT_PROPERTY,
+            EventKind::Unknown => sys::PWF_EVENT_UNKNOWN,
         }
     }
 
-    fn from_raw(raw: sys::tpw_event_kind) -> Self {
+    fn from_raw(raw: sys::pwf_event_kind) -> Self {
         match raw {
-            sys::TPW_EVENT_MIDI => EventKind::Midi,
-            sys::TPW_EVENT_OSC => EventKind::Osc,
-            sys::TPW_EVENT_PROPERTY => EventKind::Property,
+            sys::PWF_EVENT_MIDI => EventKind::Midi,
+            sys::PWF_EVENT_OSC => EventKind::Osc,
+            sys::PWF_EVENT_PROPERTY => EventKind::Property,
             _ => EventKind::Unknown,
         }
     }
@@ -634,7 +634,7 @@ impl<'a> Event<'a> {
     /// # Safety
     /// `raw`'s pointers must be valid, which they are for the length of the
     /// processing callback that filled it.
-    unsafe fn from_raw(raw: &sys::tpw_event) -> Self {
+    unsafe fn from_raw(raw: &sys::pwf_event) -> Self {
         Event {
             offset: raw.offset,
             kind: EventKind::from_raw(raw.kind),
@@ -652,8 +652,8 @@ impl<'a> Event<'a> {
 }
 
 unsafe extern "C" fn on_process(
-    _filter: sys::tpw_filter_h,
-    buffers: *mut sys::tpw_filter_port_buffer,
+    _filter: *mut sys::pwf_filter,
+    buffers: *mut sys::pwf_filter_port_buffer,
     n_buffers: usize,
     user_data: *mut c_void,
 ) {
@@ -673,8 +673,8 @@ unsafe extern "C" fn on_process(
 }
 
 unsafe extern "C" fn on_error(
-    _filter: sys::tpw_filter_h,
-    port: sys::tpw_filter_port_h,
+    _filter: *mut sys::pwf_filter,
+    port: *mut sys::pwf_filter_port,
     error_code: c_int,
     user_data: *mut c_void,
 ) {

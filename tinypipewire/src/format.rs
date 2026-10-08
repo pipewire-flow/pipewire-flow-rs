@@ -25,21 +25,21 @@ pub enum DataType {
 }
 
 impl DataType {
-    pub(crate) fn to_raw(self) -> sys::tpw_data_type {
+    pub(crate) fn to_raw(self) -> sys::pwf_data_type {
         match self {
-            DataType::Audio => sys::TPW_DATA_AUDIO,
-            DataType::Video => sys::TPW_DATA_VIDEO,
-            DataType::Signal => sys::TPW_DATA_SIGNAL,
-            DataType::Event => sys::TPW_DATA_EVENT,
+            DataType::Audio => sys::PWF_DATA_AUDIO,
+            DataType::Video => sys::PWF_DATA_VIDEO,
+            DataType::Signal => sys::PWF_DATA_SIGNAL,
+            DataType::Event => sys::PWF_DATA_EVENT,
         }
     }
 
-    pub(crate) fn from_raw(raw: sys::tpw_data_type) -> Option<Self> {
+    pub(crate) fn from_raw(raw: sys::pwf_data_type) -> Option<Self> {
         match raw {
-            sys::TPW_DATA_AUDIO => Some(DataType::Audio),
-            sys::TPW_DATA_VIDEO => Some(DataType::Video),
-            sys::TPW_DATA_SIGNAL => Some(DataType::Signal),
-            sys::TPW_DATA_EVENT => Some(DataType::Event),
+            sys::PWF_DATA_AUDIO => Some(DataType::Audio),
+            sys::PWF_DATA_VIDEO => Some(DataType::Video),
+            sys::PWF_DATA_SIGNAL => Some(DataType::Signal),
+            sys::PWF_DATA_EVENT => Some(DataType::Event),
             _ => None,
         }
     }
@@ -167,8 +167,8 @@ impl AudioConfig {
         self
     }
 
-    pub(crate) fn to_raw(self) -> sys::tpw_audio_config {
-        sys::tpw_audio_config {
+    pub(crate) fn to_raw(self) -> sys::pwf_audio_config {
+        sys::pwf_audio_config {
             sample_rate: to_c_int(self.sample_rate),
             channels: to_c_int(self.channels),
             format: self.format.as_cstr().as_ptr(),
@@ -207,8 +207,8 @@ impl VideoConfig {
         self
     }
 
-    pub(crate) fn to_raw(self) -> sys::tpw_video_config {
-        sys::tpw_video_config {
+    pub(crate) fn to_raw(self) -> sys::pwf_video_config {
+        sys::pwf_video_config {
             width: to_c_int(self.width),
             height: to_c_int(self.height),
             pixel_format: self.pixel_format.as_cstr().as_ptr(),
@@ -229,10 +229,10 @@ pub enum PortMemory {
 }
 
 impl PortMemory {
-    pub(crate) fn to_raw(self) -> sys::tpw_port_memory {
+    pub(crate) fn to_raw(self) -> sys::pwf_port_memory {
         match self {
-            PortMemory::Auto => sys::TPW_PORT_MEMORY_AUTO,
-            PortMemory::Dmabuf => sys::TPW_PORT_MEMORY_DMABUF,
+            PortMemory::Auto => sys::PWF_PORT_MEMORY_AUTO,
+            PortMemory::Dmabuf => sys::PWF_PORT_MEMORY_DMABUF,
         }
     }
 }
@@ -276,7 +276,7 @@ pub struct TargetInfo {
 }
 
 impl TargetInfo {
-    pub(crate) fn from_raw(raw: &sys::tpw_target_info) -> Self {
+    pub(crate) fn from_raw(raw: &sys::pwf_target_info) -> Self {
         TargetInfo {
             name: fixed_str(&raw.name),
             serial: fixed_str(&raw.serial),
@@ -305,7 +305,7 @@ pub struct VideoFormatInfo {
 }
 
 impl VideoFormatInfo {
-    pub(crate) fn from_raw(raw: &sys::tpw_video_format_info) -> Self {
+    pub(crate) fn from_raw(raw: &sys::pwf_video_format_info) -> Self {
         let n_fps = raw.n_fps.min(raw.fps.len());
         VideoFormatInfo {
             pixel_format: CStr::from_bytes_until_nul(bytes_of(&raw.pixel_format))
@@ -353,7 +353,7 @@ pub struct DmabufPlane {
 }
 
 impl DmabufPlane {
-    pub(crate) fn from_raw(raw: &sys::tpw_dmabuf_plane) -> Self {
+    pub(crate) fn from_raw(raw: &sys::pwf_dmabuf_plane) -> Self {
         DmabufPlane {
             fd: raw.fd,
             offset: raw.offset,

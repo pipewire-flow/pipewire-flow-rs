@@ -4,7 +4,7 @@ description = "Safe Rust bindings to tinypipewire, a small C wrapper around Pipe
 readme = "README.md"
 categories = ["api-bindings", "multimedia"]
 keywords = ["pipewire", "audio", "video", "capture", "playback"]
-version = "0.1.0"
+version = "0.2.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -19,7 +19,7 @@ bindgen = ["tinypipewire-sys/bindgen"]
 vendored = ["tinypipewire-sys/vendored"]
 
 [dependencies]
-tinypipewire-sys = { version = "0.1.0", path = "../tinypipewire-sys", default-features = false }
+tinypipewire-sys = { version = "0.2.0", path = "../tinypipewire-sys", default-features = false }
 
 [package.metadata.docs.rs]
 targets = ["x86_64-unknown-linux-gnu"]

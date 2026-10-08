@@ -118,7 +118,7 @@ pub use tinypipewire_sys as sys;
 
 /// The version of the C API these bindings were generated against.
 pub const C_API_VERSION: (u32, u32, u32) = (
-    sys::TPW_VERSION_MAJOR,
-    sys::TPW_VERSION_MINOR,
-    sys::TPW_VERSION_PATCH,
+    sys::PWF_VERSION_MAJOR,
+    sys::PWF_VERSION_MINOR,
+    sys::PWF_VERSION_PATCH,
 );

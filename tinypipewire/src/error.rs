@@ -9,7 +9,7 @@ pub type Result<T, E = Error> = std::result::Result<T, E>;
 /// Everything a tinypipewire call can go wrong with.
 ///
 /// Every variant but [`Error::CreateFailed`] and [`Error::InvalidString`] is
-/// one of the C library's `tpw_error` codes, which streams and filters share.
+/// one of the C library's `pwf_error` codes, which streams and filters share.
 /// Those two are raised by this binding.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
@@ -51,32 +51,32 @@ pub enum Error {
 impl Error {
     pub(crate) fn from_code(code: c_int) -> Self {
         match code {
-            sys::TPW_ERR_INVALID_ARG => Error::InvalidArgument,
-            sys::TPW_ERR_CONNECT_FAILED => Error::ConnectFailed,
-            sys::TPW_ERR_INVALID_FORMAT => Error::InvalidFormat,
-            sys::TPW_ERR_NOT_CONFIGURED => Error::NotConfigured,
-            sys::TPW_ERR_SOURCE_UNAVAILABLE => Error::SourceUnavailable,
-            sys::TPW_ERR_IN_CALLBACK => Error::InCallback,
-            sys::TPW_ERR_NOT_FOUND => Error::NotFound,
-            sys::TPW_ERR_TIMEOUT => Error::Timeout,
-            sys::TPW_ERR_NO_MEMORY => Error::NoMemory,
+            sys::PWF_ERR_INVALID_ARG => Error::InvalidArgument,
+            sys::PWF_ERR_CONNECT_FAILED => Error::ConnectFailed,
+            sys::PWF_ERR_INVALID_FORMAT => Error::InvalidFormat,
+            sys::PWF_ERR_NOT_CONFIGURED => Error::NotConfigured,
+            sys::PWF_ERR_SOURCE_UNAVAILABLE => Error::SourceUnavailable,
+            sys::PWF_ERR_IN_CALLBACK => Error::InCallback,
+            sys::PWF_ERR_NOT_FOUND => Error::NotFound,
+            sys::PWF_ERR_TIMEOUT => Error::Timeout,
+            sys::PWF_ERR_NO_MEMORY => Error::NoMemory,
             other => Error::Unknown(other),
         }
     }
 
-    /// The `tpw_error` code behind this error, or `None` for the variants
+    /// The `pwf_error` code behind this error, or `None` for the variants
     /// this binding raises on its own.
     pub fn code(self) -> Option<i32> {
         match self {
-            Error::InvalidArgument => Some(sys::TPW_ERR_INVALID_ARG),
-            Error::ConnectFailed => Some(sys::TPW_ERR_CONNECT_FAILED),
-            Error::InvalidFormat => Some(sys::TPW_ERR_INVALID_FORMAT),
-            Error::NotConfigured => Some(sys::TPW_ERR_NOT_CONFIGURED),
-            Error::SourceUnavailable => Some(sys::TPW_ERR_SOURCE_UNAVAILABLE),
-            Error::InCallback => Some(sys::TPW_ERR_IN_CALLBACK),
-            Error::NotFound => Some(sys::TPW_ERR_NOT_FOUND),
-            Error::Timeout => Some(sys::TPW_ERR_TIMEOUT),
-            Error::NoMemory => Some(sys::TPW_ERR_NO_MEMORY),
+            Error::InvalidArgument => Some(sys::PWF_ERR_INVALID_ARG),
+            Error::ConnectFailed => Some(sys::PWF_ERR_CONNECT_FAILED),
+            Error::InvalidFormat => Some(sys::PWF_ERR_INVALID_FORMAT),
+            Error::NotConfigured => Some(sys::PWF_ERR_NOT_CONFIGURED),
+            Error::SourceUnavailable => Some(sys::PWF_ERR_SOURCE_UNAVAILABLE),
+            Error::InCallback => Some(sys::PWF_ERR_IN_CALLBACK),
+            Error::NotFound => Some(sys::PWF_ERR_NOT_FOUND),
+            Error::Timeout => Some(sys::PWF_ERR_TIMEOUT),
+            Error::NoMemory => Some(sys::PWF_ERR_NO_MEMORY),
             Error::Unknown(code) => Some(code),
             Error::CreateFailed | Error::InvalidString => None,
         }
@@ -107,7 +107,7 @@ impl std::error::Error for Error {}
 
 /// Turns a C return code into a `Result`.
 pub(crate) fn check(code: c_int) -> Result<()> {
-    if code == sys::TPW_OK {
+    if code == sys::PWF_OK {
         Ok(())
     } else {
         Err(Error::from_code(code))
