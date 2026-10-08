@@ -3,7 +3,7 @@
 use std::ffi::{c_int, CStr};
 use std::os::fd::RawFd;
 
-use tinypipewire_sys as sys;
+use pipewire_flow_sys as sys;
 
 /// What kind of data a stream or filter port carries.
 ///

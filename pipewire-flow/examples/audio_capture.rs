@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use tinypipewire::{AudioConfig, Stream};
+use pipewire_flow::{AudioConfig, Stream};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let lost = Arc::new(AtomicBool::new(false));

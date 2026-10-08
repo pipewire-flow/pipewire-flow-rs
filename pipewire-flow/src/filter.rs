@@ -9,7 +9,7 @@ use std::slice;
 use std::sync::Mutex;
 use std::time::Duration;
 
-use tinypipewire_sys as sys;
+use pipewire_flow_sys as sys;
 
 use crate::error::{check, Error, Result};
 use crate::format::{AudioConfig, DataType, DmabufPlane, PortMemory, VideoConfig, VideoFormatInfo};

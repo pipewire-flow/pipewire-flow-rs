@@ -1,6 +1,6 @@
 //! Prints every target a stream would accept, with each camera's formats.
 
-use tinypipewire::Stream;
+use pipewire_flow::Stream;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     print_targets("audio sources", &Stream::audio_capture(|_| {})?, false)?;

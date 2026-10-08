@@ -1,6 +1,6 @@
 [package]
-name = "tinypipewire-sys"
-description = "Raw FFI bindings to tinypipewire, a small C wrapper around PipeWire's pw_stream"
+name = "pipewire-flow-sys"
+description = "Raw FFI bindings to pipewire-flow, a C library that gives PipeWire applications a simpler API"
 readme = "README.md"
 categories = ["external-ffi-bindings", "multimedia"]
 keywords = ["pipewire", "audio", "video", "ffi", "bindings"]

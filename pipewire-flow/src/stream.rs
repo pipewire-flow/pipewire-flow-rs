@@ -6,7 +6,7 @@ use std::mem::ManuallyDrop;
 use std::slice;
 use std::sync::Mutex;
 
-use tinypipewire_sys as sys;
+use pipewire_flow_sys as sys;
 
 use crate::error::{check, Error, Result};
 use crate::format::{

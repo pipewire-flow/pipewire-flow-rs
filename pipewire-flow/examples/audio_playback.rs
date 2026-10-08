@@ -4,7 +4,7 @@
 use std::f32::consts::TAU;
 use std::time::Duration;
 
-use tinypipewire::{AudioConfig, Routing, SampleFormat, Stream};
+use pipewire_flow::{AudioConfig, Routing, SampleFormat, Stream};
 
 const RATE: u32 = 48_000;
 const CHANNELS: u32 = 2;

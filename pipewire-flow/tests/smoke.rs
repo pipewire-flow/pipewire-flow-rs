@@ -2,7 +2,7 @@
 //!
 //! They are ignored by default so `cargo test` stays runnable anywhere; CI
 //! creates the sink, and a null source for capture, then runs them with
-//! `--ignored`. Set `TPW_SMOKE_SINK` or `TPW_SMOKE_SOURCE` to point them at
+//! `--ignored`. Set `PWF_SMOKE_SINK` or `PWF_SMOKE_SOURCE` to point them at
 //! different nodes.
 //!
 //! What these cover that the daemon-free tests cannot: the callback
@@ -19,7 +19,7 @@ use std::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use tinypipewire::{
+use pipewire_flow::{
     AudioConfig, DataType, Error, Event, EventKind, Filter, PortDirection, Routing, SampleFormat,
     Stream,
 };
@@ -28,11 +28,11 @@ use tinypipewire::{
 const DEADLINE: Duration = Duration::from_secs(5);
 
 fn sink() -> String {
-    std::env::var("TPW_SMOKE_SINK").unwrap_or_else(|_| "tpw-smoke-sink".to_string())
+    std::env::var("PWF_SMOKE_SINK").unwrap_or_else(|_| "pwf-smoke-sink".to_string())
 }
 
 fn source() -> String {
-    std::env::var("TPW_SMOKE_SOURCE").unwrap_or_else(|_| "tpw-smoke-source".to_string())
+    std::env::var("PWF_SMOKE_SOURCE").unwrap_or_else(|_| "pwf-smoke-source".to_string())
 }
 
 /// Waits for `ready` to hold, or gives up after [`DEADLINE`].
@@ -186,7 +186,7 @@ fn a_running_stream_can_be_dropped_without_stopping() {
 #[test]
 #[ignore = "needs a running PipeWire daemon with a null sink"]
 fn a_filter_takes_ports_and_starts() {
-    let filter = Filter::new("tpw-smoke-filter", |_| {}).expect("a filter needs a daemon");
+    let filter = Filter::new("pwf-smoke-filter", |_| {}).expect("a filter needs a daemon");
     let config = AudioConfig::new(48_000, 2).with_format(SampleFormat::F32);
 
     let input = filter
@@ -209,8 +209,8 @@ fn a_filter_takes_ports_and_starts() {
 #[test]
 #[ignore = "needs a running PipeWire daemon with a null sink"]
 fn a_filter_refuses_a_port_it_did_not_create() {
-    let owner = Filter::new("tpw-smoke-owner", |_| {}).expect("a filter needs a daemon");
-    let other = Filter::new("tpw-smoke-other", |_| {}).expect("a filter needs a daemon");
+    let owner = Filter::new("pwf-smoke-owner", |_| {}).expect("a filter needs a daemon");
+    let other = Filter::new("pwf-smoke-other", |_| {}).expect("a filter needs a daemon");
     let config = AudioConfig::new(48_000, 2).with_format(SampleFormat::F32);
     let port = owner
         .add_audio_port(PortDirection::Input, &config)
@@ -234,7 +234,7 @@ fn data_pushed_into_a_filter_reaches_its_callback() {
     // The size and timestamp of the last input the callback was handed.
     let seen = Arc::new(Mutex::new(None::<(usize, Option<i64>)>));
     let last = Arc::clone(&seen);
-    let filter = Filter::new("tpw-smoke-push", move |ports| {
+    let filter = Filter::new("pwf-smoke-push", move |ports| {
         for port in ports.iter() {
             if let Some(data) = port.input().filter(|data| !data.is_empty()) {
                 *last.lock().unwrap() = Some((data.len(), port.pts()));
@@ -282,7 +282,7 @@ fn an_event_pushed_into_a_filter_reaches_its_callback() {
     // having no room; anything else breaks the C library's contract.
     let unexpected = Arc::new(AtomicUsize::new(0));
     let (last, odd) = (Arc::clone(&seen), Arc::clone(&unexpected));
-    let filter = Filter::new("tpw-smoke-event", move |ports| {
+    let filter = Filter::new("pwf-smoke-event", move |ports| {
         for port in ports.iter_mut() {
             if let Some(event) = port.events().next() {
                 let mut data = [0; 3];
@@ -364,7 +364,7 @@ fn unlinking_with_nothing_linked_is_not_configured() {
 #[test]
 #[ignore = "needs a running PipeWire daemon with a null sink"]
 fn a_filter_port_linked_to_a_missing_node_is_not_found() {
-    let filter = Filter::new("tpw-smoke-link", |_| {}).expect("a filter needs a daemon");
+    let filter = Filter::new("pwf-smoke-link", |_| {}).expect("a filter needs a daemon");
     let input = filter
         .add_audio_port(
             PortDirection::Input,
@@ -375,7 +375,7 @@ fn a_filter_port_linked_to_a_missing_node_is_not_found() {
     assert_eq!(filter.link_port(input, &sink()), Err(Error::NotConfigured));
     filter.start().expect("start");
     assert_eq!(
-        filter.link_port(input, "tpw-smoke-no-such-node"),
+        filter.link_port(input, "pwf-smoke-no-such-node"),
         Err(Error::NotFound)
     );
     filter.stop(false).expect("stop");

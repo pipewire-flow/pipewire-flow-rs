@@ -43,9 +43,9 @@ jobs:
           sudo apt-get install -y meson ninja-build pkg-config \
             libpipewire-0.3-dev libspa-0.2-dev pipewire
 
-      - name: Install tinypipewire
+      - name: Install pipewire-flow
         run: |
-          meson setup build tinypipewire-sys/vendor/tinypipewire \
+          meson setup build pipewire-flow-sys/vendor/pipewire-flow \
             -Dexamples=false -Dtests=false -Dutils=false --prefix=/usr
           sudo meson install -C build
           sudo ldconfig
@@ -69,9 +69,9 @@ jobs:
           sudo apt-get install -y meson ninja-build pkg-config \
             libpipewire-0.3-dev libspa-0.2-dev pipewire wireplumber
 
-      - name: Install tinypipewire
+      - name: Install pipewire-flow
         run: |
-          meson setup build tinypipewire-sys/vendor/tinypipewire \
+          meson setup build pipewire-flow-sys/vendor/pipewire-flow \
             -Dexamples=false -Dtests=false -Dutils=false --prefix=/usr
           sudo meson install -C build
           sudo ldconfig
@@ -104,13 +104,13 @@ jobs:
         run: |
           pw-cli create-node adapter '{
             factory.name  = support.null-audio-sink
-            node.name     = tpw-smoke-sink
+            node.name     = pwf-smoke-sink
             media.class   = Audio/Sink
             object.linger = true
             audio.position = [ FL FR ]
           }'
           for _ in $(seq 1 20); do
-            pw-cli ls Node | grep -q tpw-smoke-sink && exit 0
+            pw-cli ls Node | grep -q pwf-smoke-sink && exit 0
             sleep 0.5
           done
           echo "the null sink never appeared in the graph:" >&2
@@ -123,13 +123,13 @@ jobs:
         run: |
           pw-cli create-node adapter '{
             factory.name  = support.null-audio-sink
-            node.name     = tpw-smoke-source
+            node.name     = pwf-smoke-source
             media.class   = Audio/Source/Virtual
             object.linger = true
             audio.position = [ FL FR ]
           }'
           for _ in $(seq 1 20); do
-            pw-cli ls Node | grep -q tpw-smoke-source && exit 0
+            pw-cli ls Node | grep -q pwf-smoke-source && exit 0
             sleep 0.5
           done
           echo "the null source never appeared in the graph:" >&2
@@ -158,7 +158,7 @@ jobs:
       # These are #[ignore]d so every other job can run the suite with no
       # daemon; here they assert the callbacks actually fire.
       - name: Run the smoke tests
-        run: cargo test -p tinypipewire --test smoke -- --ignored --test-threads=1
+        run: cargo test -p pipewire-flow --test smoke -- --ignored --test-threads=1
 
       - name: Show the daemon logs on failure
         if: failure()
@@ -185,11 +185,11 @@ jobs:
       # library happens to be installed, and needs no PipeWire to link against.
       - name: Regenerate and compare
         env:
-          TINYPIPEWIRE_SYS_HEADERS_ONLY: "1"
-          TINYPIPEWIRE_SYS_UPDATE_BINDINGS: "1"
+          PIPEWIRE_FLOW_SYS_HEADERS_ONLY: "1"
+          PIPEWIRE_FLOW_SYS_UPDATE_BINDINGS: "1"
         run: |
-          cargo build -p tinypipewire-sys
-          git diff --exit-code -- tinypipewire-sys/src/bindings/pregenerated.rs
+          cargo build -p pipewire-flow-sys
+          git diff --exit-code -- pipewire-flow-sys/src/bindings/pregenerated.rs
 
   lint:
     name: Format and lint
@@ -252,7 +252,7 @@ jobs:
 
       - name: Check
         env:
-          TINYPIPEWIRE_SYS_HEADERS_ONLY: "1"
+          PIPEWIRE_FLOW_SYS_HEADERS_ONLY: "1"
         run: cargo +"$MSRV" check --workspace --all-targets
 
   no-libclang:
@@ -270,7 +270,7 @@ jobs:
             libpipewire-0.3-dev libspa-0.2-dev
 
       - name: Build with bindgen turned off
-        run: cargo build -p tinypipewire --no-default-features --features vendored
+        run: cargo build -p pipewire-flow --no-default-features --features vendored
 
   package:
     name: Verify the published package builds on its own
@@ -289,5 +289,5 @@ jobs:
       # cargo package unpacks the crate it just built and compiles that copy,
       # so this fails if the vendored C sources do not ship inside it.
       - name: Package and build the extracted crate
-        run: cargo package -p tinypipewire-sys --features vendored
+        run: cargo package -p pipewire-flow-sys --features vendored
 

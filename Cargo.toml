@@ -1,10 +1,10 @@
 [workspace]
-members = ["tinypipewire-sys", "tinypipewire"]
+members = ["pipewire-flow-sys", "pipewire-flow"]
 resolver = "2"
 
 [workspace.package]
 edition = "2021"
 rust-version = "1.82"
 license = "MIT"
-repository = "https://github.com/tinyPipeWire/tinypipewire-rs"
+repository = "https://github.com/pipewire-flow/pipewire-flow-rs"
 authors = ["Sangchul Lee <sangchul1011@gmail.com>"]

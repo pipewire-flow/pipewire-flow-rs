@@ -3,7 +3,7 @@
 use std::sync::mpsc;
 use std::time::Duration;
 
-use tinypipewire::{AudioConfig, Filter, PortDirection, SampleFormat};
+use pipewire_flow::{AudioConfig, Filter, PortDirection, SampleFormat};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // The processing callback is registered before any port exists, so the
@@ -43,9 +43,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 /// Sums the samples of the two named input ports.
 fn mix(
-    buffers: &[tinypipewire::PortBuffer],
-    a: tinypipewire::Port,
-    b: tinypipewire::Port,
+    buffers: &[pipewire_flow::PortBuffer],
+    a: pipewire_flow::Port,
+    b: pipewire_flow::Port,
 ) -> Vec<f32> {
     let read = |port| {
         buffers

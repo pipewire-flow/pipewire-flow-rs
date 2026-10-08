@@ -1,12 +1,12 @@
 use std::ffi::c_int;
 use std::fmt;
 
-use tinypipewire_sys as sys;
+use pipewire_flow_sys as sys;
 
-/// The result of a fallible tinypipewire call.
+/// The result of a fallible pipewire-flow call.
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
-/// Everything a tinypipewire call can go wrong with.
+/// Everything a pipewire-flow call can go wrong with.
 ///
 /// Every variant but [`Error::CreateFailed`] and [`Error::InvalidString`] is
 /// one of the C library's `pwf_error` codes, which streams and filters share.
@@ -97,7 +97,7 @@ impl fmt::Display for Error {
             Error::NoMemory => "a memory allocation failed",
             Error::CreateFailed => "the C library could not create the object",
             Error::InvalidString => "a string argument held an interior NUL byte",
-            Error::Unknown(code) => return write!(f, "unknown tinypipewire error {code}"),
+            Error::Unknown(code) => return write!(f, "unknown pipewire-flow error {code}"),
         };
         f.write_str(text)
     }
