@@ -1,6 +1,6 @@
 //! Checks that need no PipeWire daemon: pure conversions and error mapping.
 
-use tinypipewire::{
+use pipewire_flow::{
     AudioConfig, DataType, Error, EventKind, PixelFormat, PortDirection, PortMemory, SampleFormat,
     VideoConfig, C_API_VERSION,
 };

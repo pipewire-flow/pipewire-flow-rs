@@ -1,4 +1,4 @@
-[submodule "tinypipewire-sys/vendor/tinypipewire"]
-	path = tinypipewire-sys/vendor/tinypipewire
+[submodule "pipewire-flow-sys/vendor/pipewire-flow"]
+	path = pipewire-flow-sys/vendor/pipewire-flow
 	url = https://github.com/pipewire-flow/pipewire-flow.git
 	branch = main

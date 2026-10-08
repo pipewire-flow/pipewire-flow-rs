@@ -1,6 +1,6 @@
-//! Safe Rust bindings to [tinypipewire], a small C library that wraps
-//! PipeWire's `pw_stream` for audio and video capture, audio playback, and
-//! multi-port filters.
+//! Safe Rust bindings to [pipewire-flow], a C library that gives PipeWire
+//! applications a simpler API for audio and video capture, audio playback,
+//! and multi-port filters that bundle every input into one graph cycle.
 //!
 //! There are two things to build with: a [`Stream`], which is one PipeWire
 //! node carrying one media type, and a [`Filter`], which is one node with any
@@ -10,7 +10,7 @@
 //! # Capturing audio
 //!
 //! ```no_run
-//! use tinypipewire::{AudioConfig, Stream};
+//! use pipewire_flow::{AudioConfig, Stream};
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let stream = Stream::audio_capture(|buf| {
@@ -36,7 +36,7 @@
 //! next block of samples each cycle.
 //!
 //! ```no_run
-//! use tinypipewire::{AudioConfig, Stream};
+//! use pipewire_flow::{AudioConfig, Stream};
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let stream = Stream::playback(|buf| {
@@ -76,11 +76,11 @@
 //!
 //! # Linking
 //!
-//! The `tinypipewire-sys` crate finds the C library through `pkg-config`, and
-//! builds the copy tinypipewire-sys ships when that fails or when the
+//! The `pipewire-flow-sys` crate finds the C library through `pkg-config`, and
+//! builds the copy pipewire-flow-sys ships when that fails or when the
 //! `vendored` feature is on.
 //!
-//! [tinypipewire]: https://github.com/tinyPipeWire/tinypipewire
+//! [pipewire-flow]: https://github.com/pipewire-flow/pipewire-flow
 
 #![warn(missing_docs)]
 
@@ -114,7 +114,7 @@ struct CrateReadme;
 struct WorkspaceReadme;
 
 /// The raw FFI bindings this crate is built on.
-pub use tinypipewire_sys as sys;
+pub use pipewire_flow_sys as sys;
 
 /// The version of the C API these bindings were generated against.
 pub const C_API_VERSION: (u32, u32, u32) = (

@@ -1,11 +1,11 @@
-# tinypipewire-sys
+# pipewire-flow-sys
 
-Raw FFI declarations for [tinypipewire], a small C library that wraps
-PipeWire's `pw_stream` for audio and video capture, audio playback, and
-multi-port filters.
+Raw FFI declarations for [pipewire-flow], a C library that gives PipeWire
+applications a simpler API for audio and video capture, audio playback, and
+multi-port filters that bundle every input into one graph cycle.
 
 Everything here is generated from the C headers and is `unsafe` to call. Use
-the [`tinypipewire`](https://crates.io/crates/tinypipewire) crate for a safe
+the [`pipewire-flow`](https://crates.io/crates/pipewire-flow) crate for a safe
 interface; reach for this one only when you need something the safe layer
 does not expose yet.
 
@@ -34,4 +34,4 @@ pinned C release does.
 
 MIT, matching the C library.
 
-[tinypipewire]: https://github.com/tinyPipeWire/tinypipewire
+[pipewire-flow]: https://github.com/pipewire-flow/pipewire-flow

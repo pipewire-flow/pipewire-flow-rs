@@ -1,6 +1,6 @@
 [package]
-name = "tinypipewire"
-description = "Safe Rust bindings to tinypipewire, a small C wrapper around PipeWire's pw_stream"
+name = "pipewire-flow"
+description = "Safe Rust bindings to pipewire-flow, a C library that gives PipeWire applications a simpler API"
 readme = "README.md"
 categories = ["api-bindings", "multimedia"]
 keywords = ["pipewire", "audio", "video", "capture", "playback"]
@@ -14,12 +14,12 @@ authors.workspace = true
 [features]
 default = ["bindgen"]
 # Generate the FFI bindings from the installed headers at build time.
-bindgen = ["tinypipewire-sys/bindgen"]
-# Build the C sources tinypipewire-sys ships instead of probing pkg-config.
-vendored = ["tinypipewire-sys/vendored"]
+bindgen = ["pipewire-flow-sys/bindgen"]
+# Build the C sources pipewire-flow-sys ships instead of probing pkg-config.
+vendored = ["pipewire-flow-sys/vendored"]
 
 [dependencies]
-tinypipewire-sys = { version = "0.2.0", path = "../tinypipewire-sys", default-features = false }
+pipewire-flow-sys = { version = "0.2.0", path = "../pipewire-flow-sys", default-features = false }
 
 [package.metadata.docs.rs]
 targets = ["x86_64-unknown-linux-gnu"]

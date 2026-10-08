@@ -1,21 +1,21 @@
-# tinypipewire
+# pipewire-flow
 
-Safe Rust bindings to [tinypipewire], a small C library that wraps PipeWire's
-`pw_stream` for audio and video capture, audio playback, and multi-port
-filters. It hides the thread loop, SPA POD format negotiation, and buffer
+Safe Rust bindings to [pipewire-flow], a C library that gives PipeWire
+applications a simpler API for audio and video capture, audio playback, and
+multi-port filters that bundle every input into one graph cycle. It hides the thread loop, SPA POD format negotiation, and buffer
 dequeue/queue plumbing behind owned handles that return `Result`.
 
 PipeWire is Linux-only, so this crate builds and runs there.
 
 ```toml
 [dependencies]
-tinypipewire = "0.2"
+pipewire-flow = "0.2"
 ```
 
 Capture from the default microphone for five seconds:
 
 ```rust,no_run
-use tinypipewire::{AudioConfig, Stream};
+use pipewire_flow::{AudioConfig, Stream};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let stream = Stream::audio_capture(|buf| {
@@ -39,7 +39,7 @@ block. Dropping a `Stream` or `Filter` stops it and joins its threads.
 
 ## Building
 
-The C library comes from one of two places. By default `tinypipewire-sys`
+The C library comes from one of two places. By default `pipewire-flow-sys`
 probes pkg-config for an installed `pipewire-flow` >= 0.12.0; the `vendored`
 feature builds the C sources the `-sys` crate ships, which needs Meson, Ninja
 and `libpipewire-0.3` >= 0.3.50 development files.
@@ -53,4 +53,4 @@ cargo build --features vendored
 
 MIT, matching the C library.
 
-[tinypipewire]: https://github.com/tinyPipeWire/tinypipewire
+[pipewire-flow]: https://github.com/pipewire-flow/pipewire-flow

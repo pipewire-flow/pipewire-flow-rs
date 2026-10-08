@@ -5,12 +5,12 @@ use std::process::Command;
 fn main() {
     println!("cargo:rerun-if-changed=wrapper.h");
     println!("cargo:rerun-if-changed=src/bindings/pregenerated.rs");
-    println!("cargo:rerun-if-env-changed=TINYPIPEWIRE_SYS_UPDATE_BINDINGS");
-    println!("cargo:rerun-if-env-changed=TINYPIPEWIRE_SYS_HEADERS_ONLY");
+    println!("cargo:rerun-if-env-changed=PIPEWIRE_FLOW_SYS_UPDATE_BINDINGS");
+    println!("cargo:rerun-if-env-changed=PIPEWIRE_FLOW_SYS_HEADERS_ONLY");
 
     // docs.rs builds in a sandbox with no PipeWire, so nothing is linked there
     // and the committed bindings stand in for a generated set.
-    let headers_only = env::var_os("TINYPIPEWIRE_SYS_HEADERS_ONLY");
+    let headers_only = env::var_os("PIPEWIRE_FLOW_SYS_HEADERS_ONLY");
     let mut include_paths = if env::var_os("DOCS_RS").is_some() {
         Vec::new()
     } else if let Some(dir) = headers_only {
@@ -125,7 +125,7 @@ fn build_vendored() -> Vec<PathBuf> {
 /// The pinned C sources, which sit inside this crate so that a published
 /// package carries them.
 fn vendor_dir() -> PathBuf {
-    PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap()).join("vendor/tinypipewire")
+    PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap()).join("vendor/pipewire-flow")
 }
 
 fn run(cmd: &mut Command) {
@@ -163,7 +163,7 @@ fn write_bindings(include_paths: &[PathBuf]) {
         bindings
             .write_to_file(&out)
             .expect("failed to write bindings");
-        if env::var_os("TINYPIPEWIRE_SYS_UPDATE_BINDINGS").is_some() {
+        if env::var_os("PIPEWIRE_FLOW_SYS_UPDATE_BINDINGS").is_some() {
             bindings
                 .write_to_file(pregenerated)
                 .expect("failed to refresh the committed bindings");

@@ -3,7 +3,7 @@
 use std::ffi::{c_char, c_int, c_void, CStr};
 use std::sync::Mutex;
 
-use tinypipewire_sys as sys;
+use pipewire_flow_sys as sys;
 
 use crate::util::guard;
 

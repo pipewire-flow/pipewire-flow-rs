@@ -1,10 +1,11 @@
-//! Raw FFI bindings to [tinypipewire], a small C wrapper around PipeWire's
-//! `pw_stream` for audio and video capture and audio playback.
+//! Raw FFI bindings to [pipewire-flow], a C library that gives PipeWire
+//! applications a simpler API for audio and video capture, audio playback,
+//! and multi-port filters that bundle every input into one graph cycle.
 //!
 //! Everything here is generated from the C headers and is `unsafe` to call.
-//! Use the `tinypipewire` crate for a safe interface.
+//! Use the `pipewire-flow` crate for a safe interface.
 //!
-//! [tinypipewire]: https://github.com/tinyPipeWire/tinypipewire
+//! [pipewire-flow]: https://github.com/pipewire-flow/pipewire-flow
 
 #![allow(non_upper_case_globals, non_camel_case_types, non_snake_case)]
 #![allow(clippy::all)]

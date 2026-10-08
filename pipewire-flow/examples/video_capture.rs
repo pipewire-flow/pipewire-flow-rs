@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use tinypipewire::{PixelFormat, Stream, VideoConfig};
+use pipewire_flow::{PixelFormat, Stream, VideoConfig};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let stream = Stream::video_capture(|buf| {
