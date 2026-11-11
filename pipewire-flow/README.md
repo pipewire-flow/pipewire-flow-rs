@@ -9,7 +9,7 @@ PipeWire is Linux-only, so this crate builds and runs there.
 
 ```toml
 [dependencies]
-pipewire-flow = "0.2"
+pipewire-flow = "0.3"
 ```
 
 Capture from the default microphone for five seconds:
@@ -40,7 +40,7 @@ block. Dropping a `Stream` or `Filter` stops it and joins its threads.
 ## Building
 
 The C library comes from one of two places. By default `pipewire-flow-sys`
-probes pkg-config for an installed `pipewire-flow` >= 0.12.0; the `vendored`
+probes pkg-config for an installed `pipewire-flow` 0.13.x; the `vendored`
 feature builds the C sources the `-sys` crate ships, which needs Meson, Ninja
 and `libpipewire-0.3` >= 0.3.50 development files.
 
