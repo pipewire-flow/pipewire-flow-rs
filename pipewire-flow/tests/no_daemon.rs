@@ -17,6 +17,8 @@ fn c_errors_carry_their_code_and_a_message() {
         (Error::NotFound, -7),
         (Error::Timeout, -8),
         (Error::NoMemory, -9),
+        (Error::InvalidState, -10),
+        (Error::NoSpace, -11),
     ];
     for (error, code) in mapped {
         assert_eq!(error.code(), Some(code));
@@ -65,5 +67,5 @@ fn enum_variants_stay_distinct() {
 #[test]
 fn the_bound_c_api_is_the_pinned_one() {
     assert_eq!(C_API_VERSION.0, 0);
-    assert!(C_API_VERSION.1 >= 11);
+    assert_eq!(C_API_VERSION.1, 13);
 }

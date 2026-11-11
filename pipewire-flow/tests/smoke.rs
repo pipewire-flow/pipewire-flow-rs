@@ -293,7 +293,7 @@ fn an_event_pushed_into_a_filter_reaches_its_callback() {
         }
         if let Some(out) = ports.get_mut(1) {
             match out.push_event(&Event::midi(0, &[0x90, 0x3c, 0x64])) {
-                Ok(()) | Err(Error::InvalidArgument) => {}
+                Ok(()) | Err(Error::NoSpace) => {}
                 Err(_) => {
                     odd.fetch_add(1, Ordering::Relaxed);
                 }
@@ -310,7 +310,7 @@ fn an_event_pushed_into_a_filter_reaches_its_callback() {
 
     assert_eq!(
         filter.push_port_event(output, &Event::midi(0, &NOTE_OFF)),
-        Err(Error::InvalidArgument),
+        Err(Error::InvalidState),
         "an output port takes events only from the processing callback"
     );
     filter.start().expect("start");
