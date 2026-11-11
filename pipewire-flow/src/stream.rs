@@ -170,8 +170,9 @@ impl Stream {
     /// Chooses how the stream reaches the graph.
     ///
     /// Must be called before the format, which is what actually connects the
-    /// stream and fixes the routing mode; afterwards it is refused. Until
-    /// then the choice can be changed freely, in either direction.
+    /// stream and fixes the routing mode; afterwards it is
+    /// [`Error::InvalidState`]. Until then the choice can be changed freely,
+    /// in either direction.
     pub fn set_routing(&self, routing: Routing<'_>) -> Result<()> {
         let (autoconnect, target) = match routing {
             Routing::Autoconnect(target) => (true, target),
@@ -199,8 +200,9 @@ impl Stream {
     /// Like a target, the role is a hint to the session manager's role policy,
     /// and nothing acts on it without one. It is read when the format connects
     /// the stream, so set it before [`Stream::set_audio_config`] or
-    /// [`Stream::set_video_config`]; a role set later does not reach the node.
-    /// Unlike a target, it is accepted under either [`Routing`].
+    /// [`Stream::set_video_config`]; naming a role later is
+    /// [`Error::InvalidState`], though clearing it is always accepted. Unlike
+    /// a target, it is accepted under either [`Routing`].
     pub fn set_role(&self, role: Option<&str>) -> Result<()> {
         match role {
             Some(role) => with_cstr(role, |role| unsafe {
@@ -233,7 +235,8 @@ impl Stream {
     /// Every entry is one [`Stream::set_video_config`] accepts for that
     /// target. Reading them opens the device briefly, unlike the free lookup
     /// [`Stream::targets`] does. A target naming no node is
-    /// [`Error::NotFound`].
+    /// [`Error::NotFound`], and `None` with no target set is
+    /// [`Error::NotConfigured`].
     pub fn target_video_formats(&self, target: Option<&str>) -> Result<Vec<VideoFormatInfo>> {
         let query = |name: *const std::ffi::c_char| unsafe {
             try_collect_list(
@@ -254,9 +257,11 @@ impl Stream {
     /// involved. Requires [`Routing::Manual`] and the stream started.
     ///
     /// Linking before the start is [`Error::NotConfigured`], and a target
-    /// naming no node is [`Error::NotFound`]. [`Error::Timeout`] means the
-    /// ports or a link did not appear in time, and [`Error::InvalidFormat`]
-    /// that a link failed to negotiate.
+    /// naming no node is [`Error::NotFound`]. Linking under
+    /// [`Routing::Autoconnect`] or a second time is [`Error::InvalidState`].
+    /// [`Error::Timeout`] means the ports or a link did not appear in time,
+    /// and [`Error::InvalidFormat`] that the target has too few channels or a
+    /// link failed to negotiate.
     pub fn link(&self, target: &str) -> Result<()> {
         with_cstr(target, |target| unsafe {
             sys::pwf_stream_link(self.handle, target.as_ptr())
@@ -271,12 +276,17 @@ impl Stream {
     }
 
     /// Sets the audio format and connects the stream.
+    ///
+    /// Setting it again replaces that connection, which is
+    /// [`Error::InvalidState`] while the stream runs or has links: stop and
+    /// unlink it first.
     pub fn set_audio_config(&self, config: &AudioConfig) -> Result<()> {
         let raw = config.to_raw();
         check(unsafe { sys::pwf_stream_set_audio_config(self.handle, &raw) })
     }
 
-    /// Sets the video format and connects the stream.
+    /// Sets the video format and connects the stream, with the same
+    /// restriction on setting it again as [`Stream::set_audio_config`].
     pub fn set_video_config(&self, config: &VideoConfig) -> Result<()> {
         let raw = config.to_raw();
         check(unsafe { sys::pwf_stream_set_video_config(self.handle, &raw) })
@@ -286,12 +296,13 @@ impl Stream {
     ///
     /// With [`PortMemory::Dmabuf`] the delivered buffers carry file
     /// descriptors instead of mapped bytes, which
-    /// [`CaptureBuffer::dmabuf_planes`] reads.
+    /// [`CaptureBuffer::dmabuf_planes`] reads. The restriction on setting it
+    /// again is the same as for [`Stream::set_audio_config`].
     pub fn set_video_config_with(&self, config: &VideoConfig, memory: PortMemory) -> Result<()> {
         let raw = config.to_raw();
-        let opts = sys::pwf_stream_dmabuf_opts {
+        let opts = sys::pwf_buffer_opts {
             memory: memory.to_raw(),
-            reserved: [0; 2],
+            ..Default::default()
         };
         check(unsafe { sys::pwf_stream_set_video_config_ex(self.handle, &raw, &opts) })
     }
@@ -302,7 +313,8 @@ impl Stream {
     }
 
     /// Stops the stream. With `drain` set, a playback stream first plays out
-    /// what it has already queued.
+    /// what it has already queued. A capture stream has no queue to wait out
+    /// and stops at once.
     pub fn stop(&self, drain: bool) -> Result<()> {
         check(unsafe { sys::pwf_stream_stop(self.handle, drain) })
     }
@@ -341,7 +353,6 @@ impl std::fmt::Debug for Stream {
 
 /// One captured buffer, borrowed for the length of the callback.
 pub struct CaptureBuffer<'a> {
-    stream: *mut sys::pwf_stream,
     raw: &'a sys::pwf_stream_buffer,
 }
 
@@ -368,7 +379,7 @@ impl<'a> CaptureBuffer<'a> {
         unsafe {
             collect_list(
                 4,
-                |out, len| sys::pwf_stream_get_dmabuf_planes(self.stream, out, len),
+                |out, len| sys::pwf_stream_buffer_get_dmabuf_planes(self.raw, out, len),
                 DmabufPlane::from_raw,
             )
         }
@@ -438,7 +449,7 @@ impl std::fmt::Debug for PlaybackBuffer<'_> {
 }
 
 unsafe extern "C" fn on_capture(
-    stream: *mut sys::pwf_stream,
+    _stream: *mut sys::pwf_stream,
     buf: *const sys::pwf_stream_buffer,
     user_data: *mut c_void,
 ) {
@@ -447,7 +458,7 @@ unsafe extern "C" fn on_capture(
             return;
         };
         if let Delivery::Capture(callback) = &mut *state.delivery.get() {
-            callback(CaptureBuffer { stream, raw });
+            callback(CaptureBuffer { raw });
         }
     });
 }

@@ -14,17 +14,18 @@ pub type Result<T, E = Error> = std::result::Result<T, E>;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum Error {
-    /// A NULL or out-of-range argument, or a call that is invalid for the
-    /// object's current state or routing mode.
+    /// A NULL or out-of-range argument, or a call this kind of stream or port
+    /// never accepts, such as a video format on an audio stream.
     InvalidArgument,
     /// Connecting to PipeWire, or asking it to create a stream, link or
     /// query, failed.
     ConnectFailed,
-    /// An unrecognized pixel or sample format, or an out-of-range dimension
-    /// or rate.
+    /// An unrecognized pixel or sample format, an out-of-range dimension or
+    /// rate, or a target whose format or channel count a link cannot use.
     InvalidFormat,
     /// A required earlier step was skipped, such as starting before a format
-    /// was set, linking before starting, or unlinking with nothing linked.
+    /// was set, linking before starting, unlinking with nothing linked, or
+    /// querying formats with no target named or set.
     NotConfigured,
     /// The connected source disappeared, or could not provide the requested
     /// memory type.
@@ -39,6 +40,15 @@ pub enum Error {
     Timeout,
     /// A memory allocation inside the C library failed.
     NoMemory,
+    /// The arguments are fine, but the object's current state or routing mode
+    /// rules the call out: a setting changed after connect or start, a second
+    /// link, a target while autoconnect is off, or an output event pushed
+    /// outside the processing callback.
+    InvalidState,
+    /// An event pushed to an output port exceeds what is left of this cycle's
+    /// buffer, or the port has no buffer this cycle. A later cycle may have
+    /// room, unless the event is larger than the port's whole buffer.
+    NoSpace,
     /// The C library refused to create the object and gave no reason.
     CreateFailed,
     /// A string argument held an interior NUL byte, so it could not cross the
@@ -60,6 +70,8 @@ impl Error {
             sys::PWF_ERR_NOT_FOUND => Error::NotFound,
             sys::PWF_ERR_TIMEOUT => Error::Timeout,
             sys::PWF_ERR_NO_MEMORY => Error::NoMemory,
+            sys::PWF_ERR_INVALID_STATE => Error::InvalidState,
+            sys::PWF_ERR_NO_SPACE => Error::NoSpace,
             other => Error::Unknown(other),
         }
     }
@@ -77,6 +89,8 @@ impl Error {
             Error::NotFound => Some(sys::PWF_ERR_NOT_FOUND),
             Error::Timeout => Some(sys::PWF_ERR_TIMEOUT),
             Error::NoMemory => Some(sys::PWF_ERR_NO_MEMORY),
+            Error::InvalidState => Some(sys::PWF_ERR_INVALID_STATE),
+            Error::NoSpace => Some(sys::PWF_ERR_NO_SPACE),
             Error::Unknown(code) => Some(code),
             Error::CreateFailed | Error::InvalidString => None,
         }
@@ -86,7 +100,7 @@ impl Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let text = match self {
-            Error::InvalidArgument => "invalid argument, or a call invalid in this state",
+            Error::InvalidArgument => "invalid argument",
             Error::ConnectFailed => "PipeWire could not be reached or refused the request",
             Error::InvalidFormat => "unrecognized format, or an out-of-range dimension or rate",
             Error::NotConfigured => "a required earlier configuration step was skipped",
@@ -95,6 +109,8 @@ impl fmt::Display for Error {
             Error::NotFound => "no node in the graph matches the target",
             Error::Timeout => "PipeWire did not answer in time",
             Error::NoMemory => "a memory allocation failed",
+            Error::InvalidState => "the call is not allowed in the object's current state",
+            Error::NoSpace => "no space left in this cycle's buffer",
             Error::CreateFailed => "the C library could not create the object",
             Error::InvalidString => "a string argument held an interior NUL byte",
             Error::Unknown(code) => return write!(f, "unknown pipewire-flow error {code}"),

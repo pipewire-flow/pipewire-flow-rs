@@ -229,10 +229,10 @@ pub enum PortMemory {
 }
 
 impl PortMemory {
-    pub(crate) fn to_raw(self) -> sys::pwf_port_memory {
+    pub(crate) fn to_raw(self) -> sys::pwf_buffer_memory {
         match self {
-            PortMemory::Auto => sys::PWF_PORT_MEMORY_AUTO,
-            PortMemory::Dmabuf => sys::PWF_PORT_MEMORY_DMABUF,
+            PortMemory::Auto => sys::PWF_BUFFER_MEMORY_AUTO,
+            PortMemory::Dmabuf => sys::PWF_BUFFER_MEMORY_DMABUF,
         }
     }
 }

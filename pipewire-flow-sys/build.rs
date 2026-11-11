@@ -67,8 +67,10 @@ fn link() -> Vec<PathBuf> {
         return build_vendored();
     }
 
+    // A C minor release can break the API until 1.0, so a newer installed
+    // copy is passed over just as an older one is.
     match pkg_config::Config::new()
-        .atleast_version("0.12.0")
+        .range_version("0.13.0".."0.14.0")
         .probe("pipewire-flow")
     {
         Ok(lib) => lib.include_paths,
