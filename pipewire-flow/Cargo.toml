@@ -4,7 +4,7 @@ description = "Safe Rust bindings to pipewire-flow, a C library that gives PipeW
 readme = "README.md"
 categories = ["api-bindings", "multimedia"]
 keywords = ["pipewire", "audio", "video", "capture", "playback"]
-version = "0.2.0"
+version = "0.3.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -19,7 +19,7 @@ bindgen = ["pipewire-flow-sys/bindgen"]
 vendored = ["pipewire-flow-sys/vendored"]
 
 [dependencies]
-pipewire-flow-sys = { version = "0.2.0", path = "../pipewire-flow-sys", default-features = false }
+pipewire-flow-sys = { version = "0.3.0", path = "../pipewire-flow-sys", default-features = false }
 
 [package.metadata.docs.rs]
 targets = ["x86_64-unknown-linux-gnu"]

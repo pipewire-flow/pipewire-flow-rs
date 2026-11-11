@@ -178,9 +178,9 @@ impl Filter {
         memory: PortMemory,
     ) -> Result<Port> {
         let raw = config.to_raw();
-        let opts = sys::pwf_filter_port_opts {
+        let opts = sys::pwf_buffer_opts {
             memory: memory.to_raw(),
-            reserved: [0; 2],
+            ..Default::default()
         };
         self.register(direction, unsafe {
             sys::pwf_filter_add_video_port_ex(self.handle, direction.to_raw(), &raw, &opts)
@@ -240,7 +240,8 @@ impl Filter {
     /// Keeps re-presenting `port`'s last buffer on cycles where no new one
     /// arrived, so a slow input does not read as empty next to a fast one.
     ///
-    /// [`PortBuffer::is_fresh`] tells the two cases apart.
+    /// [`PortBuffer::is_fresh`] tells the two cases apart. Must be called
+    /// before [`Filter::start`]; afterwards it is [`Error::InvalidState`].
     pub fn set_port_hold(&self, port: Port, enable: bool) -> Result<()> {
         let port = self.entry(port)?.port;
         check(unsafe { sys::pwf_filter_port_set_hold(port.as_raw(), enable) })
@@ -250,7 +251,8 @@ impl Filter {
     /// manager involved.
     ///
     /// Only an input port on a started filter can link; before the start it is
-    /// [`Error::NotConfigured`]. A target naming no node or port is
+    /// [`Error::NotConfigured`], and on an already-linked port it is
+    /// [`Error::InvalidState`]. A target naming no node or port is
     /// [`Error::NotFound`], a link that fails to negotiate is
     /// [`Error::InvalidFormat`], and one that does not negotiate in time is
     /// [`Error::Timeout`].
@@ -272,11 +274,12 @@ impl Filter {
     /// copying its data.
     ///
     /// An output port only takes events from within the processing callback,
-    /// through [`PortBuffer::push_event`], so it is refused here.
+    /// through [`PortBuffer::push_event`], so here it is
+    /// [`Error::InvalidState`].
     pub fn push_port_event(&self, port: Port, event: &Event<'_>) -> Result<()> {
         let entry = self.entry(port)?;
         if entry.direction != PortDirection::Input {
-            return Err(Error::InvalidArgument);
+            return Err(Error::InvalidState);
         }
         unsafe { push_event(entry.port.as_raw(), event) }
     }
@@ -305,7 +308,9 @@ impl Filter {
     }
 
     /// Asks the graph to run this filter at least once every `max_period`,
-    /// for filters whose slowest input would otherwise set the pace.
+    /// for filters whose slowest input would otherwise set the pace. Must be
+    /// called before [`Filter::start`]; afterwards it is
+    /// [`Error::InvalidState`].
     pub fn set_period_hint(&self, max_period: Duration) -> Result<()> {
         let nanos = u32::try_from(max_period.as_nanos()).unwrap_or(u32::MAX);
         check(unsafe { sys::pwf_filter_set_period_hint(self.handle, nanos) })
@@ -320,8 +325,7 @@ impl Filter {
     pub fn push_port_data(&self, port: Port, data: &[u8], pts: Option<i64>) -> Result<()> {
         let port = self.entry(port)?.port;
         check(unsafe {
-            sys::pwf_filter_push_port_data(
-                self.handle,
+            sys::pwf_filter_port_push_data(
                 port.as_raw(),
                 data.as_ptr().cast::<c_void>(),
                 data.len(),
@@ -335,8 +339,9 @@ impl Filter {
         check(unsafe { sys::pwf_filter_start(self.handle) })
     }
 
-    /// Stops the filter. With `drain` set, output ports first publish what
-    /// they have already produced.
+    /// Stops the filter. With `drain` set, a filter whose ports are all
+    /// outputs first publishes what it has already produced. One with an input
+    /// port stops at once, since a live source never runs dry.
     pub fn stop(&self, drain: bool) -> Result<()> {
         check(unsafe { sys::pwf_filter_stop(self.handle, drain) })
     }
@@ -400,8 +405,7 @@ impl Port {
 /// Enqueues one event on `port`, whose data the library copies.
 ///
 /// # Safety
-/// `port` must be alive, and an output port may only be passed from within
-/// the processing callback.
+/// `port` must be alive.
 unsafe fn push_event(port: *mut sys::pwf_filter_port, event: &Event<'_>) -> Result<()> {
     let key = match event.key {
         Some(key) => Some(CString::new(key).map_err(|_| Error::InvalidString)?),
@@ -504,7 +508,7 @@ impl PortBuffer {
         unsafe {
             collect_list(
                 4,
-                |out, len| sys::pwf_filter_port_get_dmabuf_planes(&self.0, out, len),
+                |out, len| sys::pwf_filter_port_buffer_get_dmabuf_planes(&self.0, out, len),
                 DmabufPlane::from_raw,
             )
         }
@@ -530,7 +534,8 @@ impl PortBuffer {
     /// Enqueues one event on this port, copying its data.
     ///
     /// On an output event port it joins this cycle's outgoing events; on an
-    /// input one it is staged for the next cycle.
+    /// input one it is staged for the next cycle. An output port with no room
+    /// left this cycle is [`Error::NoSpace`].
     pub fn push_event(&mut self, event: &Event<'_>) -> Result<()> {
         // A slot exists only for the length of the cycle, so its port is alive
         // and this is the processing callback.

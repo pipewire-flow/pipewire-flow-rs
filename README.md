@@ -9,12 +9,12 @@ multi-port filters that bundle every input into one graph cycle.
 | [`pipewire-flow-sys`](pipewire-flow-sys) | Raw FFI declarations, generated from the C headers by bindgen |
 | [`pipewire-flow`](pipewire-flow) | The safe interface: owned handles, `Result`, and Rust closures for the C callbacks |
 
-The bindings track C API 0.12.0, pinned as a submodule under `pipewire-flow-sys/vendor/`.
+The bindings track C API 0.13.0, pinned as a submodule under `pipewire-flow-sys/vendor/`.
 
 The two crates carry their own semver rather than the C library's, because a
 change to the Rust interface and a change to the C API are different events and
 each needs a version to say so. `pipewire-flow-sys` names the C release it binds
-as build metadata, as in `0.2.0+pwf0.12.0`; that metadata is ignored when
+as build metadata, as in `0.3.0+pwf0.13.0`; that metadata is ignored when
 resolving versions and is there to be read. Which C API a build actually got is
 reported at runtime by `pipewire_flow::C_API_VERSION`, taken from the headers
 themselves.
@@ -23,10 +23,10 @@ themselves.
 
 PipeWire is Linux-only, so the crates build and run there. Building needs
 `libpipewire-0.3` >= 0.3.50 development files, and either `pipewire-flow`
->= 0.12.0 installed or the Meson toolchain to build the vendored copy.
+0.13.x installed or the Meson toolchain to build the vendored copy.
 
-An older installed `pipewire-flow` is not an error. pkg-config passes over it
-and the build falls back to the vendored sources, saying so in a warning, so
+An installed `pipewire-flow` of any other version is not an error. pkg-config
+passes over it and the build falls back to the vendored sources, saying so in a warning, so
 check that warning if the library you meant to link against went unused.
 
 ```sh
@@ -39,7 +39,7 @@ cargo build --features vendored
 
 ```toml
 [dependencies]
-pipewire-flow = "0.2"
+pipewire-flow = "0.3"
 ```
 
 Capture from the default microphone for five seconds:
