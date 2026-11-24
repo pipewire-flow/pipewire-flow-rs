@@ -171,17 +171,19 @@ impl Stream {
     ///
     /// Must be called before the format, which is what actually connects the
     /// stream and fixes the routing mode; afterwards it is
-    /// [`Error::InvalidState`]. Until then the choice can be changed freely,
-    /// in either direction.
+    /// [`Error::InvalidState`] and leaves the target in place. Until then the
+    /// choice can be changed freely, in either direction.
     pub fn set_routing(&self, routing: Routing<'_>) -> Result<()> {
         let (autoconnect, target) = match routing {
             Routing::Autoconnect(target) => (true, target),
             Routing::Manual => (false, None),
         };
 
+        // Enabling autoconnect is refused only once the format has connected
+        // the stream, so trying it first keeps a refused call from clearing the target.
+        check(unsafe { sys::pwf_stream_set_autoconnect(self.handle, true) })?;
         // Each variant sets the whole mode, not just the half its matching C
-        // setter covers: a target left behind would still route the stream,
-        // and the C library refuses to turn autoconnect off while one is set.
+        // setter covers, because a target left behind would still route the stream.
         check(unsafe { sys::pwf_stream_set_target(self.handle, std::ptr::null()) })?;
         check(unsafe { sys::pwf_stream_set_autoconnect(self.handle, autoconnect) })?;
 
