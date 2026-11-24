@@ -25,6 +25,10 @@ fn c_errors_carry_their_code_and_a_message() {
         assert!(!error.to_string().is_empty());
     }
     assert_eq!(Error::Unknown(-99).code(), Some(-99));
+    assert_eq!(
+        Error::Unknown(-99).to_string(),
+        "Unknown error (pipewire-flow error -99)"
+    );
     assert_eq!(Error::CreateFailed.code(), None);
     assert_eq!(Error::InvalidString.code(), None);
 }

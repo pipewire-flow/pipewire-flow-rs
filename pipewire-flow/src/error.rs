@@ -1,4 +1,4 @@
-use std::ffi::c_int;
+use std::ffi::{c_int, CStr};
 use std::fmt;
 
 use pipewire_flow_sys as sys;
@@ -113,7 +113,11 @@ impl fmt::Display for Error {
             Error::NoSpace => "no space left in this cycle's buffer",
             Error::CreateFailed => "the C library could not create the object",
             Error::InvalidString => "a string argument held an interior NUL byte",
-            Error::Unknown(code) => return write!(f, "unknown pipewire-flow error {code}"),
+            Error::Unknown(code) => {
+                // pwf_strerror() returns a static string and never NULL.
+                let text = unsafe { CStr::from_ptr(sys::pwf_strerror(*code)) };
+                return write!(f, "{} (pipewire-flow error {code})", text.to_string_lossy());
+            }
         };
         f.write_str(text)
     }
