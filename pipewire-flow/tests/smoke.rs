@@ -466,3 +466,122 @@ fn a_stream_dropped_from_its_own_callback_keeps_what_it_runs() {
         "the leaked stream stopped running"
     );
 }
+
+#[test]
+#[ignore = "needs a running PipeWire daemon with a null sink"]
+fn the_format_is_fixed_while_the_stream_runs() {
+    let stream = Stream::playback(|_| {}).expect("a playback stream needs a daemon");
+    let config = AudioConfig::new(48_000, 2).with_format(SampleFormat::F32);
+    stream
+        .set_routing(Routing::Autoconnect(Some(&sink())))
+        .expect("target the sink");
+    stream
+        .set_audio_config(&config)
+        .expect("the sink is stereo f32");
+    stream.start().expect("start");
+
+    assert_eq!(
+        stream.set_audio_config(&config),
+        Err(Error::InvalidState),
+        "replacing the connection under a running stream has to be refused"
+    );
+
+    // Once stopped, the format may be replaced, which reconnects the stream.
+    stream.stop(false).expect("stop");
+    stream
+        .set_audio_config(&config)
+        .expect("a stopped stream takes a new format");
+    stream.start().expect("start again");
+    stream.stop(false).expect("stop again");
+}
+
+/// Both are read only when the format connects the stream, so naming either
+/// afterwards would silently not apply. Clearing stays allowed.
+#[test]
+#[ignore = "needs a running PipeWire daemon with a null sink"]
+fn a_target_and_role_are_fixed_once_the_format_connects() {
+    let stream = Stream::playback(|_| {}).expect("a playback stream needs a daemon");
+    stream
+        .set_routing(Routing::Autoconnect(Some(&sink())))
+        .expect("target the sink");
+    stream
+        .set_role(Some("Music"))
+        .expect("a role before connect");
+    stream
+        .set_audio_config(&AudioConfig::new(48_000, 2).with_format(SampleFormat::F32))
+        .expect("the sink is stereo f32");
+
+    let refused = |when: &str| {
+        assert_eq!(
+            stream.set_role(Some("Movie")),
+            Err(Error::InvalidState),
+            "a role named {when}"
+        );
+        assert_eq!(
+            stream.set_routing(Routing::Autoconnect(Some(&sink()))),
+            Err(Error::InvalidState),
+            "a target named {when}"
+        );
+        assert_eq!(
+            stream.set_routing(Routing::Manual),
+            Err(Error::InvalidState),
+            "manual routing asked for {when}"
+        );
+    };
+    refused("after connect");
+    stream.start().expect("start");
+    refused("while running");
+    stream.stop(false).expect("stop");
+    refused("after a stop");
+
+    stream
+        .set_role(None)
+        .expect("clearing the role is always accepted");
+}
+
+#[test]
+#[ignore = "needs a running PipeWire daemon with a null source"]
+fn a_draining_stop_of_a_capture_stream_returns_at_once() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let n = Arc::clone(&calls);
+    let stream = Stream::audio_capture(move |_| {
+        n.fetch_add(1, Ordering::Relaxed);
+    })
+    .expect("a capture stream needs a daemon");
+    stream
+        .set_routing(Routing::Autoconnect(Some(&source())))
+        .expect("target the source");
+    stream
+        .set_audio_config(&AudioConfig::new(48_000, 2).with_format(SampleFormat::F32))
+        .expect("the source is stereo f32");
+    stream.start().expect("start");
+    wait_for(|| calls.load(Ordering::Relaxed) > 0);
+
+    // A capture stream has no queue to play out, so draining must not sit
+    // through the C library's five second drain timeout.
+    let before = Instant::now();
+    stream.stop(true).expect("a draining stop");
+    let took = before.elapsed();
+    assert!(took < Duration::from_secs(2), "the stop took {took:?}");
+}
+
+#[test]
+#[ignore = "needs a running PipeWire daemon with a null sink"]
+fn a_draining_stop_of_a_filter_with_an_input_returns_at_once() {
+    let filter = Filter::new("pwf-smoke-drain", |_| {}).expect("a filter needs a daemon");
+    let config = AudioConfig::new(48_000, 2).with_format(SampleFormat::F32);
+    filter
+        .add_audio_port(PortDirection::Input, &config)
+        .expect("input port");
+    filter
+        .add_audio_port(PortDirection::Output, &config)
+        .expect("output port");
+    filter.start().expect("start");
+
+    // Only a filter whose ports are all outputs waits for a drain, because
+    // an input can keep a cycle from ever running dry.
+    let before = Instant::now();
+    filter.stop(true).expect("a draining stop");
+    let took = before.elapsed();
+    assert!(took < Duration::from_secs(2), "the stop took {took:?}");
+}
