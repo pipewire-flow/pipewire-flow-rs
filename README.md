@@ -75,9 +75,16 @@ Each runs with `cargo run --example <name>`:
 | --- | --- |
 | `audio_capture` | Capture from the default audio source, stopping when the source is lost |
 | `video_capture` | Capture 640x480 YUYV from the default camera |
+| `video_capture_mjpeg` | Capture 1280x720 MJPEG from the default camera and print each frame's varying size |
+| `video_capture_dmabuf` | Capture from the default camera as DMABUF and print each frame's plane fd and stride |
 | `audio_playback` | Play a 440 Hz tone to the default sink, or to one named on the command line |
 | `list_targets` | Print every target a stream would accept, with each camera's formats |
+| `stream_manual_link` | Link a capture stream to a named device with no session manager, pausing for inspection; a second device re-targets it |
 | `filter_mix` | Mix two audio input ports into one audio output port |
+| `filter_event_port` | Echo events from an event input port back out through an event output port |
+| `filter_signal_port` | Feed a synthetic signal port alongside an audio port into one filter |
+| `filter_dmabuf_bundle` | Bundle a held DMABUF camera input with a faster signal input |
+| `filter_port_link` | Link a camera, and optionally a microphone, into a filter by node name, taking the format from the camera |
 
 ## How the C library is found
 
