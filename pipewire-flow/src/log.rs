@@ -1,11 +1,12 @@
 //! The library's own diagnostics: where they go and how much of them.
 
+use std::cell::Cell;
 use std::ffi::{c_char, c_int, c_void, CStr};
 use std::sync::Mutex;
 
 use pipewire_flow_sys as sys;
 
-use crate::util::guard;
+use crate::util::{guard, lock};
 
 /// Severity of one log message, most to least severe.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -64,6 +65,11 @@ type LogFn = Box<dyn FnMut(Record<'_>) + Send>;
 // closure lives here rather than in a handle.
 static SINK: Mutex<Option<LogFn>> = Mutex::new(None);
 
+thread_local! {
+    // Set while this thread runs the callback, so a message it causes is dropped.
+    static IN_CALLBACK: Cell<bool> = const { Cell::new(false) };
+}
+
 /// Sets the minimum severity delivered; anything less severe is dropped
 /// before it is formatted. The library's default is [`LogLevel::Warning`].
 pub fn set_level(level: LogLevel) {
@@ -74,19 +80,22 @@ pub fn set_level(level: LogLevel) {
 /// before. With none set, messages go to stderr.
 ///
 /// This is process-wide, and the callback can run on any thread, a real-time
-/// data thread included, so it must not block.
+/// data thread included, so it must not block. Messages from several threads
+/// at once are delivered one at a time. A message the callback itself causes
+/// is dropped, and the callback must not call this function or
+/// [`clear_callback`].
 pub fn set_callback<F>(callback: F)
 where
     F: FnMut(Record<'_>) + Send + 'static,
 {
-    *SINK.lock().unwrap() = Some(Box::new(callback));
+    *lock(&SINK) = Some(Box::new(callback));
     unsafe { sys::pwf_log_set_callback(Some(on_log), std::ptr::null_mut()) };
 }
 
 /// Clears the callback, sending diagnostics back to stderr.
 pub fn clear_callback() {
     unsafe { sys::pwf_log_set_callback(None, std::ptr::null_mut()) };
-    *SINK.lock().unwrap() = None;
+    *lock(&SINK) = None;
 }
 
 unsafe extern "C" fn on_log(
@@ -96,22 +105,22 @@ unsafe extern "C" fn on_log(
     message: *const c_char,
     _user_data: *mut c_void,
 ) {
+    // A message logged from inside the callback would wait on the lock this
+    // thread already holds, so only that one is dropped.
+    if IN_CALLBACK.with(|flag| flag.replace(true)) {
+        return;
+    }
     guard(|| {
-        // A message logged from inside the callback would deadlock on a
-        // blocking lock, so such a message is dropped instead.
-        let Ok(mut slot) = SINK.try_lock() else {
-            return;
-        };
-        let Some(callback) = slot.as_mut() else {
-            return;
-        };
-        callback(Record {
-            level: LogLevel::from_raw(level),
-            file: borrow(file),
-            line,
-            message: borrow(message),
-        });
+        if let Some(callback) = lock(&SINK).as_mut() {
+            callback(Record {
+                level: LogLevel::from_raw(level),
+                file: borrow(file),
+                line,
+                message: borrow(message),
+            });
+        }
     });
+    IN_CALLBACK.with(|flag| flag.set(false));
 }
 
 unsafe fn borrow<'a>(s: *const c_char) -> &'a str {
