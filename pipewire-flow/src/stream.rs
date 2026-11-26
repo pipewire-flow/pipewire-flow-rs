@@ -1,7 +1,7 @@
 //! Audio and video capture, and audio playback, over one PipeWire node.
 
 use std::cell::UnsafeCell;
-use std::ffi::{c_int, c_void};
+use std::ffi::{c_int, c_void, CString};
 use std::mem::ManuallyDrop;
 use std::slice;
 use std::sync::Mutex;
@@ -178,6 +178,11 @@ impl Stream {
             Routing::Autoconnect(target) => (true, target),
             Routing::Manual => (false, None),
         };
+        // Converted before any C call, so a bad name changes nothing.
+        let target = target
+            .map(CString::new)
+            .transpose()
+            .map_err(|_| Error::InvalidString)?;
 
         // Enabling autoconnect is refused only once the format has connected
         // the stream, so trying it first keeps a refused call from clearing the target.
@@ -188,10 +193,9 @@ impl Stream {
         check(unsafe { sys::pwf_stream_set_autoconnect(self.handle, autoconnect) })?;
 
         match target {
-            Some(target) => with_cstr(target, |target| unsafe {
-                sys::pwf_stream_set_target(self.handle, target.as_ptr())
-            })
-            .and_then(check),
+            Some(target) => {
+                check(unsafe { sys::pwf_stream_set_target(self.handle, target.as_ptr()) })
+            }
             None => Ok(()),
         }
     }
