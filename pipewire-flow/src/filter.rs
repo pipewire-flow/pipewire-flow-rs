@@ -14,7 +14,7 @@ use pipewire_flow_sys as sys;
 use crate::error::{check, Error, Result};
 use crate::format::{AudioConfig, DataType, DmabufPlane, PortMemory, VideoConfig, VideoFormatInfo};
 use crate::util::{
-    collect_list, guard_callback, in_callback_of, state, try_collect_list, with_cstr,
+    collect_list, guard_callback, in_callback_of, lock, state, try_collect_list, with_cstr,
 };
 
 type ProcessFn = Box<dyn FnMut(&mut [PortBuffer]) + Send>;
@@ -140,14 +140,14 @@ impl Filter {
     where
         F: FnMut(Option<Port>, Error) + Send + 'static,
     {
-        *self.state.error.lock().unwrap() = Some(Box::new(callback));
+        *lock(&self.state.error) = Some(Box::new(callback));
         check(unsafe { sys::pwf_filter_set_error_callback(self.handle, Some(on_error)) })
     }
 
     /// Clears the error callback.
     pub fn clear_error_callback(&self) -> Result<()> {
         check(unsafe { sys::pwf_filter_set_error_callback(self.handle, None) })?;
-        *self.state.error.lock().unwrap() = None;
+        *lock(&self.state.error) = None;
         Ok(())
     }
 
@@ -687,10 +687,8 @@ unsafe extern "C" fn on_error(
         let Some(state) = state::<FilterState>(user_data) else {
             return;
         };
-        if let Ok(mut slot) = state.error.lock() {
-            if let Some(callback) = slot.as_mut() {
-                callback(NonNull::new(port).map(Port), Error::from_code(error_code));
-            }
+        if let Some(callback) = lock(&state.error).as_mut() {
+            callback(NonNull::new(port).map(Port), Error::from_code(error_code));
         }
     });
 }

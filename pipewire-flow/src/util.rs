@@ -1,6 +1,7 @@
 use std::cell::Cell;
 use std::ffi::{c_void, CStr, CString};
 use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use crate::error::{check, Error, Result};
 
@@ -13,6 +14,14 @@ thread_local! {
 /// unwind into C.
 pub(crate) fn guard(body: impl FnOnce()) {
     let _ = catch_unwind(AssertUnwindSafe(body));
+}
+
+/// Locks `mutex` even if a callback panicked while holding it.
+///
+/// A callback's panic is swallowed by [`guard`] and the handle keeps running,
+/// so the closure behind the lock is still meant to be called and replaced.
+pub(crate) fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 /// Runs a handle's callback trampoline under [`guard`], recording `owner` as
