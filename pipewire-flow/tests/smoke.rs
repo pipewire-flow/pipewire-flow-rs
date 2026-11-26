@@ -585,3 +585,18 @@ fn a_draining_stop_of_a_filter_with_an_input_returns_at_once() {
     let took = before.elapsed();
     assert!(took < Duration::from_secs(2), "the stop took {took:?}");
 }
+
+#[test]
+#[ignore = "needs a running PipeWire daemon with a null sink"]
+fn a_routing_change_with_a_bad_name_changes_nothing() {
+    let stream = Stream::playback(|_| {}).expect("a playback stream needs a daemon");
+    stream.set_routing(Routing::Manual).expect("manual routing");
+
+    assert_eq!(
+        stream.set_routing(Routing::Autoconnect(Some("bad\0name"))),
+        Err(Error::InvalidString)
+    );
+    // Linking checks the mode before anything else, so this tells manual
+    // routing, still not started, from an autoconnect the refused call left on.
+    assert_eq!(stream.link(&sink()), Err(Error::NotConfigured));
+}
