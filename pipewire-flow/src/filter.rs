@@ -311,6 +311,9 @@ impl Filter {
     /// for filters whose slowest input would otherwise set the pace. Must be
     /// called before [`Filter::start`]; afterwards it is
     /// [`Error::InvalidState`].
+    ///
+    /// The C library takes the period in nanoseconds as a `u32`, so anything
+    /// longer than about 4.29 seconds is clamped to that.
     pub fn set_period_hint(&self, max_period: Duration) -> Result<()> {
         let nanos = u32::try_from(max_period.as_nanos()).unwrap_or(u32::MAX);
         check(unsafe { sys::pwf_filter_set_period_hint(self.handle, nanos) })
