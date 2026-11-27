@@ -65,7 +65,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 Every callback runs on a thread the handle owns, so each closure is
 `Send + 'static`, and the buffers it receives borrow the graph's memory for
 one call only. Buffer callbacks run on the real-time data thread and must not
-block. Dropping a `Stream` or `Filter` stops it and joins its threads.
+block or allocate. Dropping a `Stream` or `Filter` stops it and joins its
+threads. The log callback is the exception: it is process-wide, runs on
+whichever thread logged, and so must also be `Sync`.
 
 ## Examples
 

@@ -33,15 +33,17 @@
 //! # Playing audio
 //!
 //! A playback stream is filled rather than drained: its callback writes the
-//! next block of samples each cycle.
+//! next block of samples each cycle, straight into the graph's buffer.
 //!
 //! ```no_run
 //! use pipewire_flow::{AudioConfig, Stream};
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let stream = Stream::playback(|buf| {
-//!     let silence = vec![0u8; buf.available()];
-//!     buf.write(&silence);
+//!     let region = buf.as_mut_slice();
+//!     region.fill(0);
+//!     let filled = region.len();
+//!     buf.set_filled(filled);
 //! })?;
 //!
 //! stream.set_audio_config(&AudioConfig::new(48_000, 2))?;
@@ -54,8 +56,9 @@
 //!
 //! Every callback runs on a thread the handle owns, so each closure is
 //! `Send + 'static`. Buffer and processing callbacks run on PipeWire's
-//! real-time data thread and must not block; error callbacks run on the
-//! handle's loop thread. The buffers passed in borrow the graph's memory for
+//! real-time data thread and must not block or allocate; error callbacks run
+//! on the handle's loop thread. The [`log`] callback is process-wide instead,
+//! runs on whichever thread logged, and so is also `Sync`. The buffers passed in borrow the graph's memory for
 //! the length of one call: copy out anything that has to outlive it.
 //!
 //! A callback cannot make every call on its own handle. Those that would wait

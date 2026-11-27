@@ -1,38 +1,33 @@
 //! Mixes two audio input ports into one audio output port.
 
-use std::sync::mpsc;
 use std::time::Duration;
 
 use pipewire_flow::{AudioConfig, Filter, PortDirection, SampleFormat};
 
+const SAMPLE: usize = 4;
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // The processing callback is registered before any port exists, so the
-    // ports reach it through a channel read on its first cycle.
-    let (tx, rx) = mpsc::channel();
-    let mut ports = None;
+    let filter = Filter::new("rust-mixer", |buffers| {
+        // Buffers come in the order the ports were added: two inputs, then
+        // the output.
+        let [a, b, out] = buffers else { return };
+        let (left, right) = (a.input().unwrap_or(&[]), b.input().unwrap_or(&[]));
+        let Some(region) = out.output() else { return };
 
-    let filter = Filter::new("rust-mixer", move |buffers| {
-        // Nothing blocks the graph here: the ports are sent before start(), so
-        // the first cycle already finds them waiting.
-        if ports.is_none() {
-            ports = rx.try_recv().ok();
+        // The sum goes straight into the output buffer, since this thread
+        // must not allocate.
+        let len = left.len().max(right.len()).min(region.len()) / SAMPLE * SAMPLE;
+        for (i, dst) in region[..len].chunks_exact_mut(SAMPLE).enumerate() {
+            let sum = sample(left, i) + sample(right, i);
+            dst.copy_from_slice(&sum.to_le_bytes());
         }
-        let Some((a, b, out)) = &ports else { return };
-
-        let mixed: Vec<f32> = mix(buffers, *a, *b);
-        for buf in buffers.iter_mut() {
-            if buf.port() == *out {
-                let bytes: Vec<u8> = mixed.iter().flat_map(|s| s.to_le_bytes()).collect();
-                buf.write(&bytes);
-            }
-        }
+        out.set_filled(len);
     })?;
 
     let config = AudioConfig::new(48_000, 2).with_format(SampleFormat::F32);
-    let a = filter.add_audio_port(PortDirection::Input, &config)?;
-    let b = filter.add_audio_port(PortDirection::Input, &config)?;
-    let out = filter.add_audio_port(PortDirection::Output, &config)?;
-    tx.send((a, b, out))?;
+    filter.add_audio_port(PortDirection::Input, &config)?;
+    filter.add_audio_port(PortDirection::Input, &config)?;
+    filter.add_audio_port(PortDirection::Output, &config)?;
 
     filter.start()?;
     println!("mixing; connect two sources to rust-mixer with pw-link");
@@ -41,31 +36,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// Sums the samples of the two named input ports.
-fn mix(
-    buffers: &[pipewire_flow::PortBuffer],
-    a: pipewire_flow::Port,
-    b: pipewire_flow::Port,
-) -> Vec<f32> {
-    let read = |port| {
-        buffers
-            .iter()
-            .find(|buf| buf.port() == port)
-            .and_then(|buf| buf.input())
-            .map(samples)
-            .unwrap_or_default()
-    };
-
-    let (left, right) = (read(a), read(b));
-    let len = left.len().max(right.len());
-    (0..len)
-        .map(|i| left.get(i).copied().unwrap_or(0.0) + right.get(i).copied().unwrap_or(0.0))
-        .collect()
-}
-
-fn samples(bytes: &[u8]) -> Vec<f32> {
-    bytes
-        .chunks_exact(4)
-        .map(|c| f32::from_le_bytes(c.try_into().expect("chunks_exact yields four bytes")))
-        .collect()
+/// The `i`th sample of `bytes`, or silence past its end.
+fn sample(bytes: &[u8], i: usize) -> f32 {
+    bytes.get(i * SAMPLE..(i + 1) * SAMPLE).map_or(0.0, |b| {
+        f32::from_le_bytes(b.try_into().expect("four bytes"))
+    })
 }
