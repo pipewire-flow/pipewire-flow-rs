@@ -109,7 +109,7 @@ fn the_log_callback_survives_panics_reentry_and_contention() {
             .contains("pwf_filter_add_audio_port: filter is NULL")
         {
             a.fetch_add(1, Ordering::Relaxed);
-            // A message logged from inside the callback is dropped, not deadlocked on.
+            // A message logged from inside the callback is dropped, not run again.
             log_signal_port_error();
         } else if record
             .message
