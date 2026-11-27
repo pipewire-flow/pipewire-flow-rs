@@ -12,10 +12,10 @@ use std::time::Duration;
 use pipewire_flow_sys as sys;
 
 use crate::error::{check, Error, Result};
-use crate::format::{AudioConfig, DataType, DmabufPlane, PortMemory, VideoConfig, VideoFormatInfo};
-use crate::util::{
-    collect_list, guard_callback, in_callback_of, lock, state, try_collect_list, with_cstr,
+use crate::format::{
+    AudioConfig, DataType, DmabufPlanes, PortMemory, VideoConfig, VideoFormatInfo,
 };
+use crate::util::{guard_callback, in_callback_of, lock, state, try_collect_list, with_cstr};
 
 type ProcessFn = Box<dyn FnMut(&mut [PortBuffer]) + Send>;
 type ErrorFn = Box<dyn FnMut(Option<Port>, Error) + Send>;
@@ -504,14 +504,10 @@ impl PortBuffer {
 
     /// The DMABUF planes behind this buffer, empty unless the port negotiated
     /// DMABUF. The file descriptors are borrowed for this cycle only.
-    pub fn dmabuf_planes(&self) -> Vec<DmabufPlane> {
-        unsafe {
-            collect_list(
-                4,
-                |out, len| sys::pwf_filter_port_buffer_get_dmabuf_planes(&self.0, out, len),
-                DmabufPlane::from_raw,
-            )
-        }
+    pub fn dmabuf_planes(&self) -> DmabufPlanes<'_> {
+        DmabufPlanes::read(|out, len| unsafe {
+            sys::pwf_filter_port_buffer_get_dmabuf_planes(&self.0, out, len)
+        })
     }
 
     /// How many events an input event port received this cycle.

@@ -4,6 +4,7 @@
 //! Usage: `filter_port_link <video-node> [audio-node]`. Node names come from
 //! `wpctl status` or `pw-cli ls Node`; an object.serial or `node:port` works too.
 
+use std::os::fd::AsRawFd;
 use std::time::Duration;
 
 use pipewire_flow::{Error, Filter, PixelFormat, PortDirection, PortMemory, VideoConfig};
@@ -25,7 +26,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         for (i, buf) in buffers.iter().enumerate() {
             if let Some(plane) = buf.dmabuf_planes().first() {
-                let (fd, stride) = (plane.fd, plane.stride);
+                let (fd, stride) = (plane.fd.as_raw_fd(), plane.stride);
                 println!(
                     "  port {i}: dmabuf fd={fd} stride={stride} fresh={} seq={}",
                     buf.is_fresh(),
