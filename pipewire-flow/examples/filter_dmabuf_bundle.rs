@@ -1,6 +1,7 @@
 //! Bundles a DMABUF camera input, held between frames, with a faster signal
 //! input, and prints each frame's first plane and freshness.
 
+use std::os::fd::AsRawFd;
 use std::time::{Duration, Instant};
 
 use pipewire_flow::{Filter, PixelFormat, PortDirection, PortMemory, VideoConfig};
@@ -15,7 +16,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // only the new ones.
             Some(plane) => println!(
                 "video fd={} stride={} {} seq={} (pts={:?} ns), signal bytes={signal_bytes}",
-                plane.fd,
+                plane.fd.as_raw_fd(),
                 plane.stride,
                 if video.is_fresh() { "new " } else { "held" },
                 video.seq(),

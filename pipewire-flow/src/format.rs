@@ -1,7 +1,8 @@
 //! Formats, configuration structs, and the descriptions a device reports.
 
 use std::ffi::{c_int, CStr};
-use std::os::fd::RawFd;
+use std::marker::PhantomData;
+use std::os::fd::BorrowedFd;
 
 use pipewire_flow_sys as sys;
 
@@ -338,12 +339,13 @@ impl VideoFormatInfo {
 
 /// One plane of a DMABUF frame.
 ///
-/// The file descriptor is borrowed from the buffer and is only valid while the
-/// callback that produced this plane is running; do not close it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct DmabufPlane {
+/// The file descriptor is borrowed from the buffer, so it cannot outlive the
+/// callback that produced it. To keep the frame longer, duplicate it with
+/// [`BorrowedFd::try_clone_to_owned`].
+#[derive(Debug, Clone, Copy)]
+pub struct DmabufPlane<'a> {
     /// Borrowed DMABUF file descriptor.
-    pub fd: RawFd,
+    pub fd: BorrowedFd<'a>,
     /// Byte offset to the plane within the dmabuf.
     pub offset: u32,
     /// Row stride in bytes.
@@ -352,14 +354,76 @@ pub struct DmabufPlane {
     pub size: u32,
 }
 
-impl DmabufPlane {
-    pub(crate) fn from_raw(raw: &sys::pwf_dmabuf_plane) -> Self {
-        DmabufPlane {
-            fd: raw.fd,
+/// The DMABUF planes of one frame, read without allocating.
+///
+/// A frame has at most [`DmabufPlanes::CAPACITY`] planes, the most a video
+/// format can have. All of them borrow the buffer they were read from.
+#[derive(Clone, Copy)]
+pub struct DmabufPlanes<'a> {
+    raw: [sys::pwf_dmabuf_plane; DmabufPlanes::CAPACITY],
+    len: usize,
+    buffer: PhantomData<&'a ()>,
+}
+
+impl<'a> DmabufPlanes<'a> {
+    /// The most planes a frame can have.
+    pub const CAPACITY: usize = 4;
+
+    /// Reads the planes with `fill`, which writes up to its capacity and
+    /// returns how many planes exist.
+    pub(crate) fn read(fill: impl FnOnce(*mut sys::pwf_dmabuf_plane, usize) -> usize) -> Self {
+        let mut raw = [sys::pwf_dmabuf_plane::default(); Self::CAPACITY];
+        let found = fill(raw.as_mut_ptr(), Self::CAPACITY).min(Self::CAPACITY);
+        // A plane with no file descriptor cannot be borrowed, so it is left out.
+        let mut len = 0;
+        for i in 0..found {
+            if raw[i].fd >= 0 {
+                raw[len] = raw[i];
+                len += 1;
+            }
+        }
+        DmabufPlanes {
+            raw,
+            len,
+            buffer: PhantomData,
+        }
+    }
+
+    /// How many planes the frame has.
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    /// True when the buffer was not delivered as DMABUF.
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    /// The plane at `index`, most significant first.
+    pub fn get(&self, index: usize) -> Option<DmabufPlane<'a>> {
+        self.raw[..self.len].get(index).map(|raw| DmabufPlane {
+            // The fd is non-negative and stays open for the borrow `'a`.
+            fd: unsafe { BorrowedFd::borrow_raw(raw.fd) },
             offset: raw.offset,
             stride: raw.stride,
             size: raw.size,
-        }
+        })
+    }
+
+    /// The first plane, which is the only one for a single-plane format.
+    pub fn first(&self) -> Option<DmabufPlane<'a>> {
+        self.get(0)
+    }
+
+    /// Every plane, most significant first.
+    pub fn iter(&self) -> impl Iterator<Item = DmabufPlane<'a>> + '_ {
+        (0..self.len).filter_map(move |i| self.get(i))
+    }
+}
+
+impl std::fmt::Debug for DmabufPlanes<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_list().entries(self.iter()).finish()
     }
 }
 
@@ -385,4 +449,37 @@ fn fixed_str(chars: &[std::ffi::c_char]) -> String {
     CStr::from_bytes_until_nul(bytes_of(chars))
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn plane(fd: c_int) -> sys::pwf_dmabuf_plane {
+        sys::pwf_dmabuf_plane {
+            fd,
+            offset: 0,
+            stride: fd as u32,
+            size: 0,
+        }
+    }
+
+    #[test]
+    fn dmabuf_planes_keep_at_most_four_and_skip_a_missing_fd() {
+        let planes = DmabufPlanes::read(|out, len| {
+            assert_eq!(len, DmabufPlanes::CAPACITY);
+            for (i, fd) in [3, -1, 5, 6].into_iter().enumerate() {
+                unsafe { out.add(i).write(plane(fd)) };
+            }
+            // The C library reports every plane, even those that did not fit.
+            6
+        });
+        let strides: Vec<u32> = planes.iter().map(|p| p.stride).collect();
+        assert_eq!(strides, [3, 5, 6]);
+        assert_eq!(planes.len(), 3);
+        assert!(planes.get(3).is_none());
+
+        let none = DmabufPlanes::read(|_, _| 0);
+        assert!(none.is_empty() && none.first().is_none());
+    }
 }

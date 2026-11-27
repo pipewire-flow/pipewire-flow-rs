@@ -10,12 +10,10 @@ use pipewire_flow_sys as sys;
 
 use crate::error::{check, Error, Result};
 use crate::format::{
-    AudioConfig, DataType, DmabufPlane, PortMemory, Routing, TargetInfo, VideoConfig,
+    AudioConfig, DataType, DmabufPlanes, PortMemory, Routing, TargetInfo, VideoConfig,
     VideoFormatInfo,
 };
-use crate::util::{
-    collect_list, guard_callback, in_callback_of, lock, state, try_collect_list, with_cstr,
-};
+use crate::util::{guard_callback, in_callback_of, lock, state, try_collect_list, with_cstr};
 
 type CaptureFn = Box<dyn FnMut(CaptureBuffer<'_>) + Send>;
 type PlaybackFn = Box<dyn FnMut(&mut PlaybackBuffer<'_>) + Send>;
@@ -381,14 +379,10 @@ impl<'a> CaptureBuffer<'a> {
 
     /// The DMABUF planes of this frame, empty unless the stream negotiated
     /// DMABUF. The file descriptors are borrowed for this callback only.
-    pub fn dmabuf_planes(&self) -> Vec<DmabufPlane> {
-        unsafe {
-            collect_list(
-                4,
-                |out, len| sys::pwf_stream_buffer_get_dmabuf_planes(self.raw, out, len),
-                DmabufPlane::from_raw,
-            )
-        }
+    pub fn dmabuf_planes(&self) -> DmabufPlanes<'a> {
+        DmabufPlanes::read(|out, len| unsafe {
+            sys::pwf_stream_buffer_get_dmabuf_planes(self.raw, out, len)
+        })
     }
 }
 

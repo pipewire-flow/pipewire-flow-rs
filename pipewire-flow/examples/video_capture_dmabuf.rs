@@ -1,6 +1,7 @@
 //! Captures from the default camera as DMABUF and prints each frame's first
 //! plane instead of its bytes.
 
+use std::os::fd::AsRawFd;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -16,7 +17,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Some(plane) => println!(
                 "{} plane(s), fd={} stride={} size={} (pts={:?} ns)",
                 planes.len(),
-                plane.fd,
+                plane.fd.as_raw_fd(),
                 plane.stride,
                 plane.size,
                 buf.pts()

@@ -28,6 +28,9 @@ Binds C API 0.13.0 (`pipewire-flow-sys` 0.3.0+pwf0.13.0, `pipewire-flow` 0.3.0).
 - `Filter` with audio, video, signal and event ports, port hold, a period
   hint, data and event pushes, per-port DMABUF planes, and linking ports to
   nodes by name.
+- `DmabufPlanes`, which reads a frame's DMABUF planes without allocating on
+  the real-time thread, each plane's file descriptor a `BorrowedFd` tied to
+  the callback.
 - `log::set_level` and `log::set_callback` to route the C library's log.
 - `Error`, covering every C error code including `InvalidState` and
   `NoSpace`, plus `Unknown` for codes from a newer library, described with
